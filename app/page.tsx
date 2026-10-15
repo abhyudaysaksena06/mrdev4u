@@ -12,10 +12,23 @@ import { Magnetic, Pill } from '@/components/ui'
 import { preload } from 'react-dom'
 
 export default function Home() {
-  // The doodle stars in the preloader and the hero: fetch it right away.
-  preload('/doodle.svg', { as: 'image', fetchPriority: 'high' })
+  // The hero doodle is needed once the preloader ends.
+  preload('/doodle.svg', { as: 'image' })
   return (
     <>
+      {/* Fetch the preloader film right away (the likely cut and theme; CSS makes the final pick). */}
+      {(['wide', 'tall'] as const).flatMap(cut =>
+        (['light', 'dark'] as const).map(theme => (
+          <link
+            key={cut + theme}
+            rel="preload"
+            as="image"
+            href={`/preloader/${cut}-${theme}.svg`}
+            media={`(${cut === 'wide' ? 'min' : 'max'}-aspect-ratio: 1/1) and (prefers-color-scheme: ${theme})`}
+            fetchPriority="high"
+          />
+        )),
+      )}
       <Preloader />
 
       <HeroCover>

@@ -234,86 +234,20 @@ html.no-intro .preloader {
     visibility: hidden;
   }
 }
-/* The doodle pushes the logo in: 0.3 s to 2.4 s, with two short "effort" pauses on the way. */
-.preloader .pusher {
-  animation: push 2.1s cubic-bezier(0.45, 0, 0.3, 1) 0.3s both;
+/* The film (see components/intro.tsx): wide or tall cut, light or dark version. Only the one in use loads. */
+.preloader-film {
+  background: url('/preloader/wide-light.svg') center / cover no-repeat;
 }
-@keyframes push {
-  0% {
-    transform: translateX(-85vw);
-  }
-  30% {
-    transform: translateX(-55vw);
-  }
-  38% {
-    transform: translateX(-52vw);
-  }
-  68% {
-    transform: translateX(-16vw);
-  }
-  76% {
-    transform: translateX(-13vw);
-  }
-  96% {
-    transform: translateX(0.6vw);
-  }
-  100% {
-    transform: translateX(0);
-  }
+:root[data-theme='dark'] .preloader-film {
+  background-image: url('/preloader/wide-dark.svg');
 }
-.preloader .push-lean {
-  transform-origin: 50% 97%;
-  animation: push-lean 2.6s var(--ease-out) 0.3s both;
-}
-@keyframes push-lean {
-  0%,
-  78% {
-    transform: rotate(7deg);
+@media (max-aspect-ratio: 1/1) {
+  .preloader-film {
+    background-image: url('/preloader/tall-light.svg');
+    background-size: contain;
   }
-  86% {
-    transform: rotate(-2deg);
-  }
-  100% {
-    transform: rotate(0);
-  }
-}
-.preloader .push-walk {
-  animation: push-walk 0.3s ease-in-out 0.3s 7 alternate both;
-}
-@keyframes push-walk {
-  to {
-    transform: translateY(-2.5%);
-  }
-}
-.preloader .push-hop {
-  animation: push-hop 0.75s var(--ease-out) 2.75s both;
-}
-@keyframes push-hop {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  35% {
-    transform: translateY(-14%);
-  }
-  65% {
-    transform: translateY(0);
-  }
-  82% {
-    transform: translateY(-4%);
-  }
-}
-.preloader .push-logo {
-  transform-origin: 50% 100%;
-  animation: push-thud 0.4s var(--ease-out) 2.3s both;
-}
-@keyframes push-thud {
-  0%,
-  100% {
-    transform: none;
-  }
-  35% {
-    transform: scale(1.05, 0.94);
+  :root[data-theme='dark'] .preloader-film {
+    background-image: url('/preloader/tall-dark.svg');
   }
 }
 .preloader .counter {
@@ -365,8 +299,7 @@ html.no-intro .preloader {
   }
 }
 
-/* Reduced motion keeps a short, still preloader (the doodle just stands by the logo) and fades
-   instead of slides. */
+/* Reduced motion keeps a short preloader and fades instead of slides. */
 :root[data-motion='reduce'] {
   --intro-base: 0.75s;
 }
@@ -375,9 +308,6 @@ html.no-intro .preloader {
 }
 :root[data-motion='reduce'] .preloader {
   animation: fade-away 0.3s ease 0.45s both;
-}
-:root[data-motion='reduce'] .preloader :is(.pusher, .push-lean, .push-walk, .push-hop, .push-logo) {
-  animation: none;
 }
 :root[data-motion='reduce'] .preloader .counter {
   animation-duration: 0.4s;
