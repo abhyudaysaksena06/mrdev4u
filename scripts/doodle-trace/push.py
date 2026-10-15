@@ -1,14 +1,13 @@
 # Traces the upper body of the "pushing" drawing (push-reference.png) for the preloader film.
 #
 # Same tracing method as the standing doodle (matte -> flat colours -> outline silhouette + one smooth
-# shape per colour), cut into parts that can move: the torso, the arms (pivot at the shoulder) and the
-# head (pivot at the neck). The torso is filled in behind the arms, so moving them shows jacket, not a
-# hole. The legs are not traced: walk.py draws new ones that can really walk.
+# shape per colour), cut into the parts the film moves: the torso (filled in behind the arms), the
+# head and the two hands. Sleeves and legs are not traced: film.py draws new ones that can bend.
 #
-# Writes upper.svg (a <g> fragment, hips at the origin) and rig.json (pivots, colours) into the
-# current directory; walk.py builds the film from them.
+# Writes parts.json (torso, head and the two hands as <g> fragments, each with its pivot at the
+# origin) and rig.json (pivots, colours) into the current directory; film.py builds the film.
 #   python3 <repo>/scripts/doodle-trace/push.py
-import json, os, re
+import json, math, os, re
 import numpy as np
 import vtracer
 from PIL import Image, ImageFilter
@@ -17,12 +16,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 S = 3  # output units per original pixel
 
 # Part boundaries, in original-image pixels.
-HEAD = [(466, 320), (592, 320), (592, 396), (574, 416), (568, 436), (548, 458), (526, 476), (500, 472), (480, 462), (468, 444)]
+HEAD = [(462, 320), (592, 320), (592, 396), (574, 416), (568, 436), (548, 458), (526, 476), (500, 472), (480, 462), (474, 452), (474, 410), (462, 408)]
 FRONT_ARM = [(368, 458), (432, 456), (442, 503), (512, 508), (586, 512), (594, 526), (588, 562), (470, 562), (420, 554), (368, 548)]
 BACK_ARM = [(420, 402), (472, 402), (476, 450), (502, 462), (530, 476), (544, 500), (516, 510), (470, 502), (440, 484), (420, 472)]
 TORSO_HULL = [(500, 455), (560, 438), (604, 430), (630, 470), (648, 560), (648, 630), (515, 630), (505, 560), (500, 500)]
 FRONT_HIP, BACK_HIP = (538, 615), (596, 618)
-SHOULDER, NECK, HIPS = (556, 498), (528, 468), (566, 616)
+NECK, HIPS = (528, 468), (566, 616)
+# The film draws new sleeves; only the hands are kept, cut at the wrist (the cuff covers the cut).
+NEAR_HAND = [(370, 460), (428, 460), (428, 510), (416, 514), (416, 545), (370, 548)]
+FAR_HAND = [(418, 405), (462, 405), (462, 409), (474, 412), (474, 452), (460, 456), (456, 466), (452, 484), (418, 484)]
+NEAR_WRIST, FAR_WRIST = (419, 528), (465, 467)
+NEAR_SHOULDER, FAR_SHOULDER = (585, 507), (560, 478)
+NEAR_PALM, FAR_PALM = (385, 507), (430, 447)  # where each palm meets the surface it pushes
 
 # ---------- 1. matte: flood the light background in from the edges ----------
 src = np.array(Image.open(os.path.join(HERE, 'push-reference.png')).convert('RGB')).astype(int)
@@ -140,16 +145,32 @@ legs = (oy >= 600) & ~dil(jacket, 3 * S) & alpha
 torso = alpha & ~legs & ~head & ~arms
 torso &= ~((oy >= 600) & ~dil(jacket, 1 * S))  # nothing of the old legs below the hem (walk.py draws new ones)
 
-# Fill the torso in behind the arms: each column takes the colour found a little below the hole
-# (so the tee strip and the jacket's front edges simply continue upwards).
+# Fill the torso in behind the arms: jacket green, with the tee strip continuing as one slanted band
+# from the collar to the hem (it runs that way in the drawing), outlined like the visible parts.
 hole = poly(TORSO_HULL) & arms
 tcls = np.where(torso, cls, '').astype(object)
-for x in np.where(hole.any(0))[0]:
-    col = np.where(hole[:, x])[0]
-    probe = [y for y in range(col.max() + 4 * S, min(H, col.max() + 12 * S)) if torso[y, x]]
-    probe = probe or [y for y in range(col.min() - 4 * S, max(0, col.min() - 12 * S), -1) if torso[y, x]]
-    tcls[col, x] = tcls[probe[0], x] if probe else 'green'
+TEE_L, TEE_R = ((512, 470), (541, 610)), ((531, 470), (574, 610))  # the strip's two edges
+
+
+def side_of(line):
+    (xa, ya), (xb, yb) = line
+    return (ox - xa) * (yb - ya) - (oy - ya) * (xb - xa)  # >0 right of the line (looking down it)
+
+
+def dist_to(line):
+    (xa, ya), (xb, yb) = line
+    return np.abs(side_of(line)) / math.hypot(xb - xa, yb - ya)
+
+
+inside_tee = (side_of(TEE_L) > 0) & (side_of(TEE_R) < 0)
+tcls[hole] = 'green'
+tcls[hole & inside_tee] = 'white'
+tcls[hole & ((dist_to(TEE_L) < 1.8) | (dist_to(TEE_R) < 1.8))] = 'ink'
 torso_full = torso | hole
+# the filled-in chest needs an outline where it meets the outside (it used to be hidden by the arms)
+outside = ~poly(TORSO_HULL)
+edge = hole & dil(outside, int(3.4 * S))
+tcls[edge] = 'ink'
 
 full = layers_for(np.where(alpha, cls, '').astype(object))
 torso_layers = layers_for(tcls)
@@ -193,17 +214,32 @@ grow = lambda m, r: dil(m, r) & alpha
 
 torso_svg = shapes(torso_layers, grow(torso_full, 6))
 torso_svg += f'<g fill="{FILL["ink"]}">' + trace(full['ink'] & head & (oy >= 430)) + '</g>'  # dark backing behind the chin
-arms_svg = g('arms', SHOULDER, shapes(full, arms, spill=grow(arms, 5) & ~head))
-head_svg = g('head', NECK, shapes(full, head, spill=grow(head, 4), speckle=10))  # fine detail: glasses, eyes
-# The upper body on its own (torso, arms, head), with the hips at the origin, for walk.py, which gives
-# him new, fully animatable legs.
+head_svg = shapes(full, head, spill=grow(head, 4), speckle=10)  # fine detail: glasses, eyes
 hx, hy = U(HIPS)
-open('upper.svg', 'w').write(f'<g transform="translate({-hx:.0f} {-hy:.0f})">' + torso_svg + arms_svg + head_svg + '</g>')
 rel = lambda p: (U(p)[0] - hx, U(p)[1] - hy)
-meta = {'w': W, 'h': H, 'ground': U((0, 783))[1], 'front_hand': U((372, 500)), 'back_hand': U((425, 440)),
-        'front_foot': U((490, 760)), 'back_foot': U((700, 775)), 'fills': FILL, 'scale': S,
-        'hips': (hx, hy), 'rel': {'front_hip': rel(FRONT_HIP), 'back_hip': rel(BACK_HIP), 'shoulder': rel(SHOULDER),
-                                  'neck': rel(NECK), 'front_hand': rel((372, 500)), 'back_hand': rel((425, 440)),
-                                  'ground': U((0, 783))[1] - hy}}
+
+
+def piece(svg, origin):
+    """Wrap traced shapes so that `origin` (original pixels) sits at 0,0."""
+    ox_, oy_ = U(origin)
+    return f'<g transform="translate({-ox_:.0f} {-oy_:.0f})">{svg}</g>'
+
+
+hand_near = poly(NEAR_HAND) & alpha
+hand_far = poly(FAR_HAND) & alpha
+parts = {
+    'torso': piece(torso_svg, HIPS),
+    'head': piece(head_svg, NECK),
+    'hand_near': piece(shapes(full, hand_near, spill=grow(hand_near, 3) & poly(NEAR_HAND), speckle=10), NEAR_WRIST),
+    'hand_far': piece(shapes(full, hand_far, spill=grow(hand_far, 3) & poly(FAR_HAND), speckle=10), FAR_WRIST),
+}
+json.dump(parts, open('parts.json', 'w'))
+meta = {'fills': FILL, 'scale': S, 'ground': U((0, 783))[1] - hy,
+        'rel': {k: rel(v) for k, v in {'front_hip': FRONT_HIP, 'back_hip': BACK_HIP, 'neck': NECK,
+                                        'near_shoulder': NEAR_SHOULDER, 'far_shoulder': FAR_SHOULDER,
+                                        'near_wrist': NEAR_WRIST, 'far_wrist': FAR_WRIST}.items()},
+        # palm contact points relative to their wrist
+        'palm': {'near': (U(NEAR_PALM)[0] - U(NEAR_WRIST)[0], U(NEAR_PALM)[1] - U(NEAR_WRIST)[1]),
+                 'far': (U(FAR_PALM)[0] - U(FAR_WRIST)[0], U(FAR_PALM)[1] - U(FAR_WRIST)[1])}}
 json.dump(meta, open('rig.json', 'w'), default=float)
-print('upper body traced:', {k: v for k, v in meta['rel'].items()})
+print('parts:', {k: len(v) for k, v in parts.items()}, meta['rel'], meta['palm'])

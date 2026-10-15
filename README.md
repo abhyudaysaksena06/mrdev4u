@@ -32,14 +32,15 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 ## How the motion works
 
 - **Intro:** a short animated film plus CSS (`Intro timeline` in `globals.css`), so it starts at first
-  paint. For about 4 s the doodle walks in pushing the m/ logo until it sits in the centre, lets go,
-  steps back and hops as the curtain lifts. The film is a self-contained animated SVG in
-  `public/preloader/` (wide/tall × light/dark). `scripts/doodle-trace/push.py` traces the upper body
-  of the pushing drawing; `walk.py` gives him new vector legs and animates a real walk (feet planted
-  on the ground, heels lifting on push-off, swing arcs, two-bone IK for the knees) sampled at 30 fps.
-  It plays on every full load of the home page and is skipped when you navigate back to home inside
-  the site. Change its length with `--intro-base` and the `.preloader` timings together (and the
-  matching wait in `HeroDoodle.tsx`).
+  paint. For about 4 s the doodle walks in pushing the m/ logo until it lands in the centre, then turns
+  to face you and hops as the curtain lifts (beat by beat in `docs/ANIMATION_PLAN.md`). The film is a
+  self-contained animated SVG in `public/preloader/` (wide/tall × light/dark):
+  `scripts/doodle-trace/push.py` traces the head, torso and hands of the pushing drawing, and
+  `film.py` adds drawn sleeves and legs, solves elbows and knees with two-bone IK every frame (hands
+  on the logo, feet planted on the ground) and samples the motion at 30 fps. It plays on every full
+  load of the home page and is skipped when you navigate back to home inside the site. Change its
+  length with `--intro-base` and the `.preloader` timings together (and the matching wait in
+  `HeroDoodle.tsx`).
 - **Motion preference:** `<html data-motion="full|reduce">`, set before paint from the visitor's saved
   choice or their OS setting. The nav's *Motion* toggle overrides it, and visitors whose OS has
   animations off get a one-time notice offering to turn motion on. Reduced mode keeps a short, still
