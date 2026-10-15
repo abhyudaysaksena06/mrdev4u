@@ -19,6 +19,8 @@
 # hull" (a slightly larger copy of each mesh, faces flipped, drawn in ink only where it shows behind
 # the surface), so it is real geometry that deforms with the rig and exports to three.js.
 import bpy, bmesh, math, sys, os
+import numpy as np
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from math import sin, cos, pi, radians, asin, atan2, sqrt
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
@@ -404,66 +406,131 @@ smooth(head)
 part(head, ['head'])
 
 for side in (-1, 1):
-    ear = ellipsoid(f'ear.{"L" if side > 0 else "R"}', (CX + side * 54, 281, 4), (8, 17, 10), ['skin'],
+    ear = ellipsoid(f'ear.{"L" if side > 0 else "R"}', (CX + side * 56, 281, 4), (10, 19, 10), ['skin'],
                     rot=(0, 0, side * -18))
     smooth(ear, 1)
     part(ear, ['head'])
 
-# Hair: a cluster of curls (spheres), fused into one surface by a voxel remesh so the outline
-# scallops like the drawing without lines between the curls.
-HAIR = [
-    # cap over the skull and the back of the head: (x, y, d, half width, half height, half depth)
-    (386, 216, 2, 56, 44, 66), (386, 252, 36, 52, 34, 40), (386, 280, 42, 46, 24, 28),
-    (340, 262, 30, 18), (432, 262, 30, 18), (352, 282, 38, 16), (420, 282, 38, 16),
-    # big curls on the outline
-    (342, 196, -4, 22), (368, 185, -8, 20), (396, 183, -8, 21), (424, 190, -6, 20), (444, 208, 0, 16),
-    (445, 230, 4, 15), (441, 248, 8, 12), (327, 216, 0, 20), (324, 238, 4, 15), (329, 251, 8, 11),
-    # fringe: a lock on his right, a parting, the rest swept to his left
-    (338, 228, -40, 14), (345, 238, -48, 11), (380, 220, -56, 15), (402, 221, -58, 15), (424, 225, -52, 15),
-    (438, 232, -42, 12), (360, 202, -50, 17), (388, 198, -56, 18), (414, 202, -54, 17),
+# Hair: the front is the drawing's own hair shape (traced), bulged into a dome over the head; curls
+# behind give the back of the head its volume. Fused into one surface by a voxel remesh.
+import trace as tr
+from scipy import ndimage as ndi
+
+HAIR_BACK = [
+    # (x, y, d, half width, half height, half depth), all hidden behind the face from the front
+    (386, 214, 18, 54, 42, 58), (386, 252, 38, 50, 32, 38), (386, 280, 44, 44, 22, 26),
+    (342, 262, 34, 16), (430, 262, 34, 16), (354, 284, 40, 14), (418, 284, 40, 14),
 ]
+
+
+def slab(name, mask, depths, mat, smooth_iters=14):
+    """A closed solid whose outline seen from the front is exactly `mask` (a drawing-px mask):
+    front and back faces at depths(x, y) -> (front, back), walls round the outline, edges rounded
+    a little by a voxel remesh."""
+    UP = 2  # work on a 2x, slightly blurred mask so the outline is smooth, not pixel steps
+    m = ndi.gaussian_filter(ndi.zoom(mask.astype(float), UP, order=1), 1.6) > 0.5
+    step = 0.75
+    ys, xs = np.nonzero(m)
+    gx = np.arange(xs.min() / UP - 2, xs.max() / UP + 3, step)
+    gy = np.arange(ys.min() / UP - 2, ys.max() / UP + 3, step)
+    nx, ny = len(gx), len(gy)
+    px = lambda v: min(int(round(v * UP)), m.shape[0] - 1)
+    inside = np.array([[m[px(y), min(int(round(x * UP)), m.shape[1] - 1)] for x in gx] for y in gy])
+    cell = inside[:-1, :-1] & inside[1:, :-1] & inside[:-1, 1:] & inside[1:, 1:]
+    used = np.zeros_like(inside)
+    for dj in (0, 1):
+        for di in (0, 1):
+            sub = np.zeros_like(inside)
+            sub[dj:dj + ny - 1, di:di + nx - 1] = cell
+            used |= sub
+    verts, front_i, back_i = [], {}, {}
+    for j in range(ny):
+        for i in range(nx):
+            if not used[j, i]:
+                continue
+            x, y = gx[i], gy[j]
+            f, b = depths(x, y)
+            front_i[i, j] = len(verts)
+            verts.append(P(x, y, f))
+            back_i[i, j] = len(verts)
+            verts.append(P(x, y, b))
+    faces, edges = [], {}
+    for j in range(ny - 1):
+        for i in range(nx - 1):
+            if cell[j, i]:
+                q = [(i, j), (i + 1, j), (i + 1, j + 1), (i, j + 1)]
+                faces.append(tuple(front_i[k] for k in q))
+                faces.append(tuple(back_i[k] for k in q[::-1]))
+                for a_, b_ in zip(q, q[1:] + q[:1]):
+                    edges[(a_, b_)] = edges.get((a_, b_), 0) + 1
+                    edges[(b_, a_)] = edges.get((b_, a_), 0)
+    for (a_, b_), c in edges.items():  # the wall round the outline
+        if c == 1 and edges.get((b_, a_), 0) == 0:
+            faces.append((front_i[b_], front_i[a_], back_i[a_], back_i[b_]))
+    ob = new_obj(name, verts, faces, [mat])
+    fix_normals(ob)
+    rm = ob.modifiers.new('fuse', 'REMESH')
+    rm.mode = 'VOXEL'
+    rm.voxel_size = 1.0 * S
+    sm = ob.modifiers.new('soften', 'SMOOTH')
+    sm.factor, sm.iterations = 1.0, smooth_iters
+    dc = ob.modifiers.new('lighter', 'DECIMATE')
+    dc.ratio = 0.25
+    apply_mods(ob)
+    for p in ob.data.polygons:
+        p.use_smooth = True
+    return ob
+
+
+def tree_of(objs):
+    """One ray-cast tree over several meshes' own surfaces (outline hulls left out)."""
+    verts, polys = [], []
+    for o in objs:
+        me = o.data
+        skip = [i for i, mt in enumerate(me.materials) if mt and mt.name == 'outline']
+        base = len(verts)
+        verts += [o.matrix_world @ v.co for v in me.vertices]
+        polys += [[base + i for i in p.vertices] for p in me.polygons if p.material_index not in skip]
+    return BVHTree.FromPolygons(verts, polys)
+
+
+def hair_front():
+    """The drawing's hair: its outline exactly the drawing's, its volume a rounded envelope round
+    the skull, always just in front of the face where the fringe covers it."""
+    head_t = tree_of([head])
+
+    def depths(x, y):
+        k = max(0.12, 1 - ((x - 386) / 90) ** 2 - ((y - 228) / 76) ** 2)
+        f = 6 - 74 * sqrt(k)
+        b = 6 + 72 * sqrt(k)
+        h = head_t.ray_cast(P(x, y, -400), Vector((0, 1, 0)))
+        if h[0] is not None:
+            f = min(f, h[0].y / S - 3)
+        return f, b
+    return slab('hair', tr.hair_mask(), depths, 'hair')
+
+
+hair = hair_front()
 curls = []
-for h in HAIR:
+for h in HAIR_BACK:
     x, y, d = h[:3]
     r = h[3:] if len(h) == 6 else (h[3], h[3], h[3])
     c = ellipsoid('curl', (x, y, d), r, ['hair'], n=20)
+    smooth(c, 1)
     curls.append(c)
 bpy.ops.object.select_all(action='DESELECT')
 for c in curls:
     c.select_set(True)
-bpy.context.view_layer.objects.active = curls[0]
+hair.select_set(True)
+bpy.context.view_layer.objects.active = hair
 bpy.ops.object.join()
 hair = bpy.context.view_layer.objects.active
 hair.name = 'hair'
-rm = hair.modifiers.new('fuse', 'REMESH')
-rm.mode = 'VOXEL'
-rm.voxel_size = 1.8 * S
-sm = hair.modifiers.new('soften', 'SMOOTH')
-sm.factor, sm.iterations = 1.0, 30
-dc = hair.modifiers.new('lighter', 'DECIMATE')
-dc.ratio = 0.3
-apply_mods(hair)
 for p in hair.data.polygons:
     p.use_smooth = True
 part(hair, ['head'])
-part(decal('hairlines', [stroke([(372, 206), (377, 214), (379, 224)], 3.4, 2.2), stroke([(398, 210), (401, 218), (399, 226)], 3.4, 2.2),
-                         stroke([(428, 212), (432, 220), (431, 230)], 3.4, 2.2)], [hair], 'ink', lift=0.8), ['head'], 0)
 
-# Face details, drawn in the drawing's own coordinates and dropped onto the face.
 face_t = [head]
-part(decal('brows', [stroke([(345, 249.5), (352, 246), (360, 244.6), (368, 245.2), (375, 247.5)], 7.2, 8.0),
-                     stroke([(400, 247.5), (407, 245.2), (415, 244.6), (423, 246), (430, 249.5)], 8.0, 7.2)],
-           face_t + [hair], 'ink', lift=1.2), ['head'], 0)
-part(decal('eyes', [oval(361.5, 269.8, 4.7, 6.7), oval(411.5, 269.8, 4.7, 6.7)], face_t, 'ink', lift=0.8), ['head'], 0)
-part(decal('nose', [stroke([(380, 288.5), (386.5, 291.5), (393, 288.5)], 3.6)], face_t, 'ink', lift=0.8), ['head'], 0)
-MOUTH = [(365.5, 305.2), (380, 303.5), (395, 302.2), (409.5, 301.2)]
-MOUTH_LOW = [(409.5, 301.2), (405, 308), (397, 313.5), (387, 315.6), (377, 314), (370, 310), (365.5, 305.2)]
-part(decal('mouth_in', [MOUTH + MOUTH_LOW[1:-1]], face_t, 'skin', lift=1.0), ['head'], 0)
-part(decal('mouth', [stroke(MOUTH, 4.4), stroke(MOUTH_LOW, 4.0)], face_t, 'ink', lift=1.6, ), ['head'], 0)
-for side, cx in ((-1, 328.5), (1, 443.5)):
-    part(decal(f'earline.{"L" if side > 0 else "R"}',
-               [stroke([(cx + side * 1, 275), (cx - side * 1.5, 277.5), (cx - side * 2, 284), (cx + side * 0.5, 288)], 2.4)],
-               [PARTS[f'ear.{"L" if side > 0 else "R"}'][0]], 'ink', lift=0.8), ['head'], 0)
 
 # Glasses: round-cornered frames standing a little off the face, temples back to the ears.
 GLASS_D = -66
@@ -514,14 +581,14 @@ def surf(rings, x, y, front=True):
 collar_pts = []
 for i in range(29):
     t = 2 * pi * i / 28
-    x, y = CX + 31 * cos(t), 373 - 10 * sin(t)
+    x, y = CX + 1 + 29 * cos(t), 364 - (22 if sin(t) < 0 else 4) * sin(t)  # the drawing's U neckline
     collar_pts.append((x, y, surf(TEE, x, y, sin(t) < 0) + (-1.2 if sin(t) < 0 else 1.2)))
 collar = tube('collar', collar_pts, [2.0] * 29, ['ink'], ref=Vector((0, 0, 1)), n=8, caps=(None, None))
 part(collar, ['chest', 'neck'], 0)
 
 # Hoodie body: open at the front where the tee shows; the gap keeps its width all the way down.
-GAP = 26.5
-HOOD_BODY = [(350, 44, 36, 6), (362, 62, 44, 4), (380, 76, 51, 2), (400, 80, 54, 0), (450, 81, 55, 0),
+GAP = 28.25
+HOOD_BODY = [(366, 66, 46, 4), (380, 76, 51, 2), (400, 80, 54, 0), (450, 81, 55, 0),
              (520, 80, 55, 0), (577, 79, 55, 0)]
 rings = []
 for y, w, d, c in HOOD_BODY:
@@ -533,19 +600,26 @@ solidify(hoodie, 3.0, 'hoodin')
 part(hoodie, ['hips', 'spine', 'chest'])
 
 rings = []
-for y, w, d in ((576, 80.5, 56), (595, 79.5, 55.5)):
+for y, w, d in ((576, 79, 56), (595, 78.5, 55.5)):
     phi = asin(GAP / w)
     rings.append(hring(y, w, d, 0, n=33, a0=-pi / 2 + phi, a1=3 * pi / 2 - phi, closed=False))
 hem = loft('hem', rings, ['hoodie'], closed=False)
 smooth(hem, 1)
 solidify(hem, 4.0, 'hoodin')
 part(hem, ['hips'])
-seam('hem_top', 576.5, 82.5, 58, ['hips'], gap=GAP + 1, w=3.2)
+seam('hem_top', 576.5, 81, 58, ['hips'], gap=GAP + 1, w=3.2)
+# the front edges of the open hoodie (its rim is edge-on, so the outline cannot draw it)
+for side in (-1, 1):
+    x = CX + side * GAP
+    d = -55 * sqrt(1 - (GAP / 81) ** 2) + 0.5
+    part(tube(f'front_edge.{"L" if side > 0 else "R"}', [(x + side * 5, 392, d + 8), (x + side, 404, d + 1), (x, 420, d), (x, 500, d), (x, 596, d)],
+              [2.6] * 5, ['ink'], ref=Vector((0, 1, 0)), n=8, caps=(0.6, 0.6)), ['hips', 'spine', 'chest'], 0)
 
 # Hood: a thick rim around the neck, dark inside, with the lime piping on its outer edge.
-HOOD = [(354, 404, -50), (344, 384, -44), (333, 356, -30), (329, 336, -12), (334, 322, 10), (354, 314, 30),
-        (386, 312, 38)]
-hood_path = HOOD + mirror_x(HOOD[::-1])[1:]
+# measured on the drawing: the rim's centre line, its radius, and its depth
+HOOD = [(330, 334, -6, 8.5), (334, 324, 6, 8), (346, 318, 20, 7), (364, 315, 32, 6.5), (386, 314, 38, 6)]
+hood_path = [h[:3] for h in HOOD] + mirror_x([h[:3] for h in HOOD[::-1]])[1:]
+hood_r = [h[3] for h in HOOD] + [h[3] for h in HOOD[::-1]][1:]
 neck_axis = P(CX, 0, 10)
 
 
@@ -554,10 +628,22 @@ def outward(i, c):
     return r.normalized() if r.length > 1e-6 else Vector((0, 1, 0))
 
 
-hood = tube('hood', hood_path, [(7.5, 9)] * len(hood_path), ['hoodie'], ref=outward, n=16, caps=(0.5, 0.5))
+hood = tube('hood', hood_path, [(r, r + 2) for r in hood_r], ['hoodie'], ref=outward, n=16, caps=(0.5, 0.5))
 smooth(hood)
-ang = tube_angle(hood, outward)
-paint(hood, lambda p, f: 'lime' if (-25 < ang(p)[0] < 30 and p[1] < 362) else ('navy' if abs(ang(p)[0]) > 120 else None))
+def hood_paint(p, f):
+    # by which way the face looks: away from the neck is the outside (lime piping along the top),
+    # toward the neck is the dark lining
+    c = P(*p)
+    out = Vector((c.x - neck_axis.x, c.y - neck_axis.y, 0)).normalized()
+    k = f.normal.dot(out)
+    if k < -0.35:
+        return 'navy'
+    if k > 0.55 and 322 < p[1] < 358 and f.normal.z < 0.6:
+        return 'lime'
+    return None
+
+
+paint(hood, hood_paint)
 part(hood, ['chest', 'neck'])
 
 inside = ellipsoid('hood_inside', (CX, 344, 18), (56, 30, 26), ['navy'])
@@ -577,15 +663,24 @@ for side, x in ((-1, 344), (1, 428)):
 
 # ================================================================ ARMS (sleeves, cuffs, hands)
 # Raglan sleeve from the hood down to the cuff, lime stripe down its outer side.
-ARM = [(346, 352, -2, 12), (318, 366, 0, 24), (300, 384, 1, 33), (284, 412, 2, 33), (270, 450, 3, 31),
-       (262, 490, 3, 30), (258, 530, 3, 29), (259, 560, 2, 27), (261, 574, 2, 23)]
+# Sleeve centre lines and radii fitted to the drawing's outlines (x, y, depth, radius), each side
+# on its own: the drawing is not quite symmetric.
+ARM = {
+    'R': [(341, 358, -2, 8), (321, 367, 0, 18), (312, 378, 1, 25), (303, 386, 1, 27), (297, 398, 2, 27.5),
+          (289.5, 416, 2, 27.5), (279.5, 440, 3, 26), (271, 470, 3, 25.5), (265.25, 506, 3, 25.75),
+          (262, 530, 3, 25), (259.75, 554, 2, 24.25), (259.75, 566, 2, 22.75), (260.5, 574, 2, 19)],
+    'L': [(431, 358, -2, 8), (451, 367, 0, 18), (463, 378, 1, 25), (472, 386, 1, 27), (478, 398, 2, 27.5),
+          (486, 416, 2, 27.5), (495.5, 440, 3, 26), (504.5, 470, 3, 25.5), (510.25, 506, 3, 25.75),
+          (513, 530, 3, 25), (515.25, 554, 2, 24.25), (515.25, 566, 2, 22.75), (515.25, 574, 2, 19.75)],
+}
+CUFF_X = {'R': 260, 'L': 515.5}
 
 
 def arm(side):
     nm = 'L' if side > 0 else 'R'
-    pts = [(CX + side * (CX - x), y, d) for x, y, d, r in ARM]
+    pts = [(x, y, d) for x, y, d, r in ARM[nm]]
     out = Vector((side, 0, 0))
-    sl = tube(f'sleeve.{nm}', pts, [r for *_, r in ARM], ['hoodie'], ref=out, n=24, caps=(0.6, 0.3))
+    sl = tube(f'sleeve.{nm}', pts, [r for *_, r in ARM[nm]], ['hoodie'], ref=out, n=24, caps=(0.6, 0.3))
     smooth(sl)
     a = tube_angle(sl, out)
 
@@ -593,16 +688,16 @@ def arm(side):
         g, s_ = a(p)
         # angle 0 is straight out, +/-90 is front/back (v = t x u)
         front = -g if side < 0 else g
-        return 'lime' if (s_ > 0.7 and -8 < front < 34) else None
+        return 'lime' if (s_ > 1.35 and -8 < front < 34) else None
     paint(sl, stripe)
     part(sl, [f'shoulder.{nm}', f'upper_arm.{nm}', f'forearm.{nm}', 'chest'])
 
-    cx = CX + side * (CX - 260)
-    cuff = loft(f'cuff.{nm}', [hring(y, 21.5, 20, 2, x=cx) for y in (576, 586, 595)], ['hoodie'],
+    cx = CUFF_X[nm]
+    cuff = loft(f'cuff.{nm}', [hring(y, r, r, 2, x=cx) for y, r in ((574, 17), (586, 16.5), (595, 16))], ['hoodie'],
                 caps=(None, P(cx, 597, 2)))
     smooth(cuff)
     part(cuff, [f'forearm.{nm}'])
-    seam(f'cuff_top.{nm}', 576, 23.5, 22, [f'forearm.{nm}'], x=cx, dc=2, w=3.2)
+    seam(f'cuff_top.{nm}', 576, 18.5, 18.5, [f'forearm.{nm}'], x=cx, dc=2, w=3.2)
 
     hand(side, nm, cx)
 
@@ -647,11 +742,50 @@ def hand(side, nm, cx, turn=18):
 arm(-1)
 arm(1)
 
+
+def hood_front():
+    """The hood's rim and lining in front, taken from the drawing: its shape, and per face the
+    drawing's own colour there (green rim, lime piping, navy lining)."""
+    under = tree_of([PARTS[n][0] for n in PARTS if n.startswith(('neck', 'tee', 'hoodie', 'hood_inside', 'sleeve', 'hood'))
+                     and PARTS[n][2]])
+
+    mask = tr.hood_mask()
+    # depth of whatever lies under the hood, then made smooth (a fold of fabric, not a stack of
+    # steps) while staying in front of everything under it
+    ys, xs = np.nonzero(ndi.binary_dilation(mask, tr.disk(10)))
+    y0, y1, x0, x1 = ys.min(), ys.max() + 1, xs.min(), xs.max() + 1
+    raw = np.full((y1 - y0, x1 - x0), np.nan)
+    for y in range(y0, y1):
+        for x in range(x0, x1):
+            h = under.ray_cast(P(x, y, -400), Vector((0, 1, 0)))
+            if h[0] is not None:
+                raw[y - y0, x - x0] = h[0].y / S
+    raw = np.where(np.isnan(raw), np.nanmax(raw), raw)
+    front = ndi.gaussian_filter(ndi.minimum_filter(raw, 15), 5) - 5
+
+    def depths(x, y):
+        f = front[min(max(int(round(y)) - y0, 0), y1 - y0 - 1), min(max(int(round(x)) - x0, 0), x1 - x0 - 1)]
+        return f, f + 14
+    ob = slab('hood_front', mask, depths, 'hoodie', smooth_iters=6)
+    cls = tr.colour_class(tr.rgb())
+
+    def colour(p, f):
+        if f.normal.y > -0.6:  # only what faces the viewer takes the drawing's colours
+            return None
+        x, y = int(round(p[0])), int(round(p[1]))
+        c = cls[y, x]
+        return {'lime': 'lime', 'navy': 'navy'}.get(c)
+    paint(ob, colour)
+    part(ob, ['chest', 'neck'])
+
+
+hood_front()
+
 # ================================================================ LEGS
 # Each leg of the trousers runs from the waist (half of the hips) to the ankle, so there is no
 # hip-to-leg junction to show; the two halves fuse down the middle above the crotch.
 LEGS = [(588, 38, 41, 50, 2.6), (606, 40, 40, 48, 2.6), (620, 44, 34, 38, 2.3), (634, 46, 31, 33, 2.1),
-        (700, 46, 29.5, 28, 2), (760, 50, 28.5, 27, 2), (810, 53, 27.5, 26, 2), (829, 54, 27, 25.6, 2)]
+        (700, 46, 29.5, 28, 2), (760, 49, 25.5, 25, 2), (810, 52, 23.5, 23, 2), (829, 53, 23, 22.5, 2)]
 legs = []
 for side in (-1, 1):
     leg = loft('leg', [hring(y, w, d, 0, x=CX + side * o, n=24, e=e) for y, o, w, d, e in LEGS], ['pants'],
@@ -683,8 +817,8 @@ part(pelvis, ['hips', 'thigh.L', 'thigh.R', 'shin.L', 'shin.R'])
 def shoe(side):
     """Rounded shoe with a flat sole, heel under the ankle, toes turned out like the drawing's."""
     nm = 'L' if side > 0 else 'R'
-    yaw = side * 50
-    ob = ellipsoid(f'shoe.{nm}', (CX, FLOOR, 0), (30, 20, 66), ['shoe'])
+    yaw = side * 45
+    ob = ellipsoid(f'shoe.{nm}', (CX, FLOOR, 0), (26, 16.5, 50), ['shoe'])
     bm = bmesh.new()
     bm.from_mesh(ob.data)
     for v in bm.verts:
@@ -696,7 +830,7 @@ def shoe(side):
     bm.to_mesh(ob.data)
     bm.free()
     ob.rotation_euler = (0, 0, radians(yaw))
-    ob.location = P(CX + side * 81, 846, -22)
+    ob.location = P(CX + side * 76, 845, -14)
     apply_transform(ob)
     smooth(ob, 1)
     part(ob, [f'foot.{nm}'])
@@ -854,7 +988,7 @@ def setup_render(res=(776, 1024)):
     SC.render.resolution_percentage = 100
 
 
-def camera(name, yaw=0.0, pitch=-6.0, res=(776, 1024), centre=(388, 512), scale_px=1024):
+def camera(name, yaw=0.0, pitch=0.0, res=(776, 1024), centre=(388, 512), scale_px=1024):
     """Orthographic camera; yaw turns around the figure (degrees, + shows his left side)."""
     cam = bpy.data.objects.get('cam') or bpy.data.objects.new('cam', bpy.data.cameras.new('cam'))
     if cam.name not in SC.collection.objects:
@@ -874,6 +1008,76 @@ def camera(name, yaw=0.0, pitch=-6.0, res=(776, 1024), centre=(388, 512), scale_
     bpy.ops.render.render(write_still=True)
 
 
+def traced_lines():
+    """Every ink line of the drawing that the model's outlines miss (face, strands, folds, seams),
+    traced from the drawing and laid onto the surface it falls on, so it moves with that part."""
+    tmp = os.path.join(OUT, '_pass1.png')
+    camera('_pass1', pitch=0.0)
+    regions = tr.regions(tr.missing_lines(tmp))
+    os.remove(tmp)
+    from mathutils.geometry import tessellate_polygon
+    targets = {}
+    for name, (ob, bones, line) in PARTS.items():
+        if line == 0 and name not in ('glasses',):
+            continue
+        me = ob.data
+        out_i = [i for i, m in enumerate(me.materials) if m and m.name == 'outline']
+        polys = [p.vertices[:] for p in me.polygons if p.material_index not in out_i]
+        targets[name] = BVHTree.FromPolygons([v.co.copy() for v in me.vertices], polys)
+    per = {}
+    for outer, holes in regions:
+        cx = sum(p[0] for p in outer) / len(outer)
+        cy = sum(p[1] for p in outer) / len(outer)
+        hit = None
+        for k, (x, y) in enumerate([(cx, cy)] + outer[::max(1, len(outer) // 12)]):
+            hs = [(n, t.ray_cast(P(x, y, -400), Vector((0, 1, 0)))) for n, t in targets.items()]
+            hs = [(n, h) for n, h in hs if h[0] is not None]
+            if hs:
+                hit = min(hs, key=lambda nh: nh[1][3])[0]
+                break
+        if hit is None:
+            continue
+        per.setdefault(hit, []).append((outer, holes))
+    for name, regs in per.items():
+        tree = targets[name]
+        # lay the shapes out flat in drawing px, split them finely, then drop every point onto the
+        # surface (with only outline points the fill would cut chords through a curved surface)
+        bm = bmesh.new()
+        for outer, holes in regs:
+            loops = [outer] + holes
+            vs = [bm.verts.new((x, y, 0)) for loop in loops for x, y in loop]
+            for tri in tessellate_polygon([[Vector((x, y, 0)) for x, y in loop] for loop in loops]):
+                try:
+                    bm.faces.new([vs[i] for i in tri])
+                except ValueError:
+                    pass
+        for _ in range(8):
+            long_ = [e for e in bm.edges if e.calc_length() > 3.0]
+            if not long_:
+                break
+            bmesh.ops.subdivide_edges(bm, edges=long_, cuts=1, use_grid_fill=False)
+            bmesh.ops.triangulate(bm, faces=bm.faces[:])
+        last, facing = 0.0, {}
+        for v in bm.verts:
+            x, y = v.co.x, v.co.y
+            h = tree.ray_cast(P(x, y, -400), Vector((0, 1, 0)))
+            if h[0] is not None:
+                last = h[0].y
+                facing[v] = -h[1].y
+            v.co = Vector((P(x, y).x, last - 0.8 * S, P(x, y).z))
+        # lines on surfaces seen edge-on would smear into streaks from other angles: leave them out
+        bad = [f for f in bm.faces if sum(facing.get(v, 0.0) for v in f.verts) / len(f.verts) < 0.3]
+        bmesh.ops.delete(bm, geom=bad, context='FACES')
+        me = bpy.data.meshes.new(f'lines.{name}')
+        bm.to_mesh(me)
+        bm.free()
+        ob = bpy.data.objects.new(f'lines.{name}', me)
+        COL.objects.link(ob)
+        me.materials.append(flat('ink'))
+        fix_facing(ob)
+        part(ob, PARTS[name][1], 0)
+
+
 def export_glb(path):
     """Skinned GLB for three.js: deforming bones only, flat colours as unlit materials."""
     for ob in SC.objects:
@@ -884,14 +1088,15 @@ def export_glb(path):
 
 
 if __name__ == '__main__':
+    finish_outlines()
+    traced_lines()
     RIG = build_rig()
     skin(RIG)
-    finish_outlines()
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'doodle.blend'))
     if '--glb' in sys.argv:
         export_glb(os.path.join(OUT, 'doodle.glb'))
     if '--render' in sys.argv:
         camera('front')
-        camera('three_quarter', yaw=-35)
-        camera('side', yaw=-90)
-        camera('back', yaw=180)
+        camera('three_quarter', yaw=-35, pitch=-6)
+        camera('side', yaw=-90, pitch=-6)
+        camera('back', yaw=180, pitch=-6)
