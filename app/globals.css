@@ -9,6 +9,7 @@
   --body: #555555;
   --muted: #636363; /* 4.8:1 on paper */
   --line: #d3d1cb;
+  --card: #1c1c1c; /* stacked service cards on the dark panel */
   --accent: #ff4c24;
   --ease-out: cubic-bezier(0.12, 0.23, 0.5, 1);
   --ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
@@ -21,6 +22,7 @@
   --body: #a9a7a2;
   --muted: #8a8a8a; /* 5:1 on ink */
   --line: #2c2c2c;
+  --card: #dfddd7;
   color-scheme: dark;
 }
 
@@ -30,6 +32,7 @@
   --color-body: var(--body);
   --color-muted: var(--muted);
   --color-line: var(--line);
+  --color-card: var(--card);
   --color-accent: var(--accent);
   --font-display: var(--font-anton), 'Arial Narrow', sans-serif;
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
