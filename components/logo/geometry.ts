@@ -1,29 +1,28 @@
-// The "m/" monogram, defined once and drawn both as SVG and as extruded 3D.
+// The "M/" monogram, defined once and drawn both as SVG and as extruded 3D.
+// The orange piece is both the M's right leg and a developer's slash ("</>").
+// Pieces tile edge to edge without overlapping, so the 3D extrusion renders cleanly.
 // Units: the mark is LOGO_W wide and 1 tall, origin bottom-left, y up.
 
 export type Piece =
   | { id: string; kind: 'rect'; x: number; y: number; w: number; h: number; r?: [number, number, number, number]; accent?: boolean }
   | { id: string; kind: 'poly'; points: [number, number][]; accent?: boolean }
 
-export const LOGO_W = 1.98
+export const LOGO_W = 1.4
 
 export const PIECES: Piece[] = [
-  // corner radii order: top-left, top-right, bottom-right, bottom-left
-  { id: 'top', kind: 'rect', x: 0, y: 0.72, w: 1.24, h: 0.28, r: [0.28, 0.28, 0, 0] },
-  { id: 'stem-l', kind: 'rect', x: 0, y: 0, w: 0.26, h: 0.74 },
-  { id: 'stem-m', kind: 'rect', x: 0.49, y: 0, w: 0.26, h: 0.74 },
-  { id: 'stem-r', kind: 'rect', x: 0.98, y: 0, w: 0.26, h: 0.74 },
-  { id: 'slash', kind: 'poly', points: [[1.38, 0], [1.62, 0], [1.98, 1], [1.74, 1]], accent: true },
+  { id: 'stem-l', kind: 'poly', points: [[0, 0], [0.26, 0], [0.26, 0.653], [0, 1]] },
+  { id: 'diag', kind: 'poly', points: [[0, 1], [0.32, 1], [0.86, 0.28], [0.54, 0.28]] },
+  { id: 'slash', kind: 'poly', points: [[1.08, 1], [1.4, 1], [0.86, 0.28], [0.7, 0.4933]], accent: true },
+  { id: 'stem-r', kind: 'poly', points: [[1.14, 0], [1.4, 0], [1.4, 1], [1.14, 0.653]] },
 ]
 
 // Where each piece starts before it assembles (preloader) or where it lies (404).
 // dx, dy in logo units, rot in degrees.
 export const SCATTER: Record<string, { dx: number; dy: number; rot: number }> = {
-  top: { dx: -0.9, dy: 1.1, rot: -38 },
-  'stem-l': { dx: -1.5, dy: -0.8, rot: 24 },
-  'stem-m': { dx: 0.2, dy: -1.3, rot: -62 },
-  'stem-r': { dx: 1.2, dy: 1.3, rot: 48 },
-  slash: { dx: 1.6, dy: -0.6, rot: -30 },
+  'stem-l': { dx: -1.3, dy: -0.7, rot: 28 },
+  diag: { dx: -0.6, dy: 1.15, rot: -42 },
+  slash: { dx: 1.3, dy: 0.9, rot: 36 },
+  'stem-r': { dx: 1.1, dy: -1.1, rot: -58 },
 }
 
 // SVG path for a piece, in a viewBox of `0 0 LOGO_W 1` with y flipped.

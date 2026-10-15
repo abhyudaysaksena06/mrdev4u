@@ -49,7 +49,7 @@ export function HeroLogo() {
 
   return (
     <>
-      <div id={HERO_ANCHOR_ID} className="intro-fade relative aspect-[1.94/1] w-full" style={{ ['--d' as string]: '120ms' }}>
+      <div id={HERO_ANCHOR_ID} className="intro-fade relative mx-auto aspect-[1.4/1] w-full max-w-[34rem]" style={{ ['--d' as string]: '120ms' }}>
         <LogoMark
           className={`absolute inset-[9%] size-[82%] text-ink transition-opacity duration-500 ${logo3d ? 'opacity-0' : ''}`}
         />

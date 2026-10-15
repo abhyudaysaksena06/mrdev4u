@@ -49,7 +49,7 @@ export function Preloader() {
   return (
     <div className="preloader" aria-hidden>
       <div className="absolute inset-0 grid place-items-center">
-        <svg viewBox={`-0.02 -0.02 ${LOGO_W + 0.04} 1.04`} className="w-[min(46vw,320px)] overflow-visible text-ink">
+        <svg viewBox={`-0.02 -0.02 ${LOGO_W + 0.04} 1.04`} className="w-[min(36vw,240px)] overflow-visible text-ink">
           {PIECES.map((p, i) => {
             const s = SCATTER[p.id]
             return (
@@ -58,6 +58,8 @@ export function Preloader() {
                 d={piecePath(p)}
                 className="piece"
                 fill={p.accent ? 'var(--accent)' : 'currentColor'}
+                stroke={p.accent ? 'var(--accent)' : 'currentColor'}
+                strokeWidth={0.006}
                 style={{
                   ['--dx' as string]: `${s.dx}px`,
                   ['--dy' as string]: `${-s.dy}px`,

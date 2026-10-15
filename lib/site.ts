@@ -1,9 +1,10 @@
 // Everything personal lives here. Replace the placeholders marked TODO.
 export const site = {
   alias: 'mrdev4u',
+  wordmark: 'mr.dev4u', // the giant footer wordmark
   name: 'Abhyuday Saksena',
   role: 'Creative developer',
-  url: 'https://mrdev4u.vercel.app', // TODO: your domain
+  url: 'https://www.mrdev4u.com',
   description:
     'Portfolio of mrdev4u, a creative developer building fast, interactive websites with React, Next.js and WebGL.',
   // TODO: a public contact address (deliberately not your personal email)

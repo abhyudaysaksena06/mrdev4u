@@ -73,6 +73,8 @@ export function LogoToy({ mode = 'footer', className = '' }: { mode?: 'footer' |
                   key={p.id}
                   d={piecePath(p)}
                   fill={p.accent ? 'var(--accent)' : 'currentColor'}
+                  stroke={p.accent ? 'var(--accent)' : 'currentColor'}
+                  strokeWidth={0.006}
                   style={{
                     transformBox: 'fill-box',
                     transformOrigin: 'center',

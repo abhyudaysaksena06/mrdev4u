@@ -52,7 +52,7 @@ export function Nav() {
             data-cursor="Home"
             className={`relative flex items-center rounded-[4px] border bg-paper px-2.5 py-2 transition-[border-color,background-color] duration-300 ${hideMark ? 'border-transparent bg-transparent' : 'border-ink'}`}
           >
-            <span id="nav-logo-slot" className="block h-[1.35rem] w-[2.62rem] text-ink">
+            <span id="nav-logo-slot" className="block h-[1.35rem] w-[1.87rem] text-ink">
               <LogoMark
                 className={`size-full transition-opacity duration-300 ${hideMark ? 'opacity-0' : ''}`}
                 title={site.alias}
