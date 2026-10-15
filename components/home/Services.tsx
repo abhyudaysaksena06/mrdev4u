@@ -1,5 +1,6 @@
 import { services } from '@/lib/site'
 import { LineReveal, Reveal } from '../motion'
+import { CardStack } from './CardStack'
 
 // Dark panel that slides over the pinned hero. Service headers stick and stack as you scroll.
 export function Services() {
@@ -20,16 +21,18 @@ export function Services() {
         </Reveal>
       </div>
 
-      {/* Stacking cards: each card pins below the previous card's header row and covers its body,
-          so text never scrolls half-hidden under a sticky header. */}
-      {/* --hh is the header height; each card pins exactly one header below the previous one,
-          so stacked headers line up edge to edge with nothing peeking between them. */}
-      <div className="mt-24 [--hh:76px] tab:[--hh:104px]">
+      {/* Stacking cards: each card pins one header (--hh) below the previous one and covers its
+          body, so at the end of the stack every heading is visible above the last card. */}
+      <CardStack className="mt-24 [--card:34rem] [--hh:76px] tab:[--hh:104px]">
         {services.map((s, i) => (
           <article
             key={s.title}
-            className="sticky min-h-[78svh] border-t border-paper/15 bg-ink"
-            style={{ top: `calc(16px + ${i} * var(--hh))`, zIndex: i + 1 }}
+            className="sticky border-t border-paper/15 bg-ink"
+            style={{
+              top: `calc(16px + ${i} * var(--hh))`,
+              minHeight: `calc(var(--card) + ${services.length - 1 - i} * var(--hh))`,
+              zIndex: i + 1,
+            }}
           >
             <header className="grid h-[var(--hh)] grid-cols-12 items-center">
               <span className="display col-span-3 text-4xl tab:text-6xl">0{i + 1}.</span>
@@ -53,7 +56,7 @@ export function Services() {
             </div>
           </article>
         ))}
-      </div>
+      </CardStack>
     </section>
   )
 }
