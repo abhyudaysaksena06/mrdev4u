@@ -1,0 +1,281 @@
+@import 'tailwindcss';
+
+@custom-variant dark (&:where([data-theme='dark'], [data-theme='dark'] *));
+
+/* Palette measured from grigoletti.ch; dark theme swaps paper and ink. */
+:root {
+  --paper: #ebe9e4;
+  --ink: #111111;
+  --body: #555555;
+  --muted: #636363; /* 4.8:1 on paper */
+  --line: #d3d1cb;
+  --accent: #ff4c24;
+  --ease-out: cubic-bezier(0.12, 0.23, 0.5, 1);
+  --ease-inout: cubic-bezier(0.76, 0, 0.24, 1);
+  color-scheme: light;
+}
+
+:root[data-theme='dark'] {
+  --paper: #111111;
+  --ink: #ebe9e4;
+  --body: #a9a7a2;
+  --muted: #8a8a8a; /* 5:1 on ink */
+  --line: #2c2c2c;
+  color-scheme: dark;
+}
+
+@theme inline {
+  --color-paper: var(--paper);
+  --color-ink: var(--ink);
+  --color-body: var(--body);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-accent: var(--accent);
+  --font-display: var(--font-anton), 'Arial Narrow', sans-serif;
+  --font-sans: var(--font-geist-sans), system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono), ui-monospace, monospace;
+  --ease-soft: var(--ease-out);
+  --ease-inout: var(--ease-inout);
+  --breakpoint-tab: 810px;
+  --breakpoint-desk: 1200px;
+}
+
+html {
+  background: var(--paper);
+  color: var(--ink);
+}
+
+body {
+  font-family: var(--font-sans);
+  background: var(--paper);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Lenis */
+html.lenis,
+html.lenis body {
+  height: auto;
+}
+.lenis.lenis-smooth {
+  scroll-behavior: auto !important;
+}
+.lenis.lenis-stopped {
+  overflow: hidden;
+}
+
+/* Display type: condensed, uppercase, tight */
+.display {
+  font-family: var(--font-display);
+  text-transform: uppercase;
+  line-height: 0.9;
+  letter-spacing: 0.005em;
+  font-weight: 400;
+}
+
+/* Film grain over the whole site (SVG noise, no image download) */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  pointer-events: none;
+  opacity: 0.07;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.9 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+:root[data-theme='dark'] body::after {
+  opacity: 0.05;
+  mix-blend-mode: screen;
+}
+
+::selection {
+  background: var(--accent);
+  color: #111;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+/* Rolling label: the copy sits below and slides up on hover */
+.roll {
+  position: relative;
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: top;
+}
+.roll > span {
+  display: block;
+  transition: transform 0.35s var(--ease-out);
+}
+.roll > span + span {
+  position: absolute;
+  inset: 0;
+  transform: translateY(100%);
+}
+.group:hover .roll > span:first-child,
+.group:focus-visible .roll > span:first-child {
+  transform: translateY(-100%);
+}
+.group:hover .roll > span + span,
+.group:focus-visible .roll > span + span {
+  transform: translateY(0);
+}
+
+/* Marquee */
+@keyframes marquee {
+  to {
+    transform: translateX(-50%);
+  }
+}
+.marquee {
+  animation: marquee var(--marquee-duration, 40s) linear infinite;
+}
+
+/* Page transitions (View Transitions API) */
+::view-transition-old(root) {
+  animation: 0.5s var(--ease-inout) both page-out;
+}
+::view-transition-new(root) {
+  animation: 0.6s var(--ease-inout) both page-in;
+}
+::view-transition-group(*) {
+  animation-duration: 0.7s;
+  animation-timing-function: var(--ease-inout);
+}
+@keyframes page-out {
+  to {
+    opacity: 0;
+    transform: translateY(-40px);
+  }
+}
+@keyframes page-in {
+  from {
+    clip-path: inset(100% 0 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root),
+  ::view-transition-group(*) {
+    animation-duration: 0.2s;
+    animation-name: none;
+  }
+  .marquee {
+    animation: none;
+  }
+  .roll > span {
+    transition: none;
+  }
+}
+
+/* ---------- Intro timeline (CSS, runs before hydration) ---------- */
+@property --n {
+  syntax: '<integer>';
+  inherits: false;
+  initial-value: 0;
+}
+:root {
+  --intro-base: 1.45s; /* when the hero starts revealing on a first visit */
+}
+html.no-intro {
+  --intro-base: 0.05s;
+}
+
+.preloader {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  background: var(--paper);
+  animation: curtain 0.65s var(--ease-inout) 1.15s both;
+}
+html.no-intro .preloader {
+  display: none;
+}
+@keyframes curtain {
+  to {
+    transform: translateY(-100%);
+    visibility: hidden;
+  }
+}
+.preloader .piece {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: assemble 0.85s var(--ease-out) var(--d) both;
+}
+@keyframes assemble {
+  from {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot));
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+}
+.preloader .counter {
+  counter-reset: n var(--n);
+  animation: count 1.05s var(--ease-out) both;
+}
+.preloader .counter::after {
+  content: counter(n, decimal-leading-zero);
+}
+@keyframes count {
+  from {
+    --n: 0;
+  }
+  to {
+    --n: 100;
+  }
+}
+
+.intro-line {
+  animation: line-in 0.65s var(--ease-out) both;
+  animation-delay: calc(var(--intro-base) + var(--i) * 70ms);
+}
+@keyframes line-in {
+  from {
+    transform: translateY(105%);
+  }
+}
+.intro-word {
+  animation: word-in 0.45s var(--ease-out) both;
+  animation-delay: calc(var(--intro-base) + 250ms + var(--d));
+}
+@keyframes word-in {
+  from {
+    opacity: 0.1;
+  }
+}
+.intro-fade {
+  animation: fade-up 0.5s var(--ease-out) both;
+  animation-delay: calc(var(--intro-base) + var(--d));
+}
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .preloader {
+    display: none;
+  }
+  .intro-line,
+  .intro-word,
+  .intro-fade {
+    animation: fade-only 0.2s ease both;
+  }
+}
+@keyframes fade-only {
+  from {
+    opacity: 0;
+  }
+}
