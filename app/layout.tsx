@@ -8,6 +8,7 @@ import { SmoothScroll } from '@/components/SmoothScroll'
 import { Cursor } from '@/components/Cursor'
 import { Nav } from '@/components/Nav'
 import { Footer } from '@/components/Footer'
+import { MotionNotice } from '@/components/ui'
 import './globals.css'
 
 const anton = localFont({
@@ -31,9 +32,8 @@ export const viewport: Viewport = {
   ],
 }
 
-// Runs before paint so the saved or system theme never flashes.
-// Also skips the preloader after the first page load of a session.
-const themeScript = `try{var d=document.documentElement,t=localStorage.getItem('theme');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';d.dataset.theme=t;if(sessionStorage.getItem('intro'))d.classList.add('no-intro');else sessionStorage.setItem('intro','1')}catch(e){}`
+// Runs before paint: applies the saved/system theme and motion preference so nothing flashes.
+const themeScript = `try{var d=document.documentElement,t=localStorage.getItem('theme'),m=localStorage.getItem('motion');if(!t)t=matchMedia('(prefers-color-scheme: dark)').matches?'dark':'light';d.dataset.theme=t;d.dataset.motionSource=m?'user':'system';if(!m)m=matchMedia('(prefers-reduced-motion: reduce)').matches?'reduce':'full';d.dataset.motion=m}catch(e){}`
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
@@ -61,6 +61,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <Footer />
           </SmoothScroll>
           <Cursor />
+          <MotionNotice />
         </body>
       </html>
     </ViewTransitions>

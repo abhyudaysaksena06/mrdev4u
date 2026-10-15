@@ -161,19 +161,15 @@ body::after {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-old(root),
-  ::view-transition-new(root),
-  ::view-transition-group(*) {
-    animation-duration: 0.2s;
-    animation-name: none;
-  }
-  .marquee {
-    animation: none;
-  }
-  .roll > span {
-    transition: none;
-  }
+/* Reduced motion: <html data-motion="reduce"> (system setting or the nav toggle) */
+:root[data-motion='reduce']::view-transition-old(root),
+:root[data-motion='reduce']::view-transition-new(root),
+:root[data-motion='reduce']::view-transition-group(*) {
+  animation-duration: 0.2s;
+  animation-name: none;
+}
+:root[data-motion='reduce'] .marquee {
+  animation: none;
 }
 
 /* ---------- Intro timeline (CSS, runs before hydration) ---------- */
@@ -183,7 +179,7 @@ body::after {
   initial-value: 0;
 }
 :root {
-  --intro-base: 1.45s; /* when the hero starts revealing on a first visit */
+  --intro-base: 1.45s; /* when the hero starts revealing after the preloader */
 }
 html.no-intro {
   --intro-base: 0.05s;
@@ -264,14 +260,32 @@ html.no-intro .preloader {
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .preloader {
-    display: none;
-  }
-  .intro-line,
-  .intro-word,
-  .intro-fade {
-    animation: fade-only 0.2s ease both;
+/* Reduced motion keeps a short, still preloader (no flying pieces) and fades instead of slides. */
+:root[data-motion='reduce'] {
+  --intro-base: 0.75s;
+}
+:root[data-motion='reduce'].no-intro {
+  --intro-base: 0.05s;
+}
+:root[data-motion='reduce'] .preloader {
+  animation: fade-away 0.3s ease 0.45s both;
+}
+:root[data-motion='reduce'] .preloader .piece {
+  animation: none;
+}
+:root[data-motion='reduce'] .preloader .counter {
+  animation-duration: 0.4s;
+}
+:root[data-motion='reduce'] .intro-line,
+:root[data-motion='reduce'] .intro-word,
+:root[data-motion='reduce'] .intro-fade {
+  animation-name: fade-only;
+  animation-duration: 0.3s;
+}
+@keyframes fade-away {
+  to {
+    opacity: 0;
+    visibility: hidden;
   }
 }
 @keyframes fade-only {

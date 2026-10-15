@@ -20,14 +20,23 @@ export function Services() {
         </Reveal>
       </div>
 
+      {/* Stacking cards: each card pins below the previous card's header row and covers its body,
+          so text never scrolls half-hidden under a sticky header. */}
       <div className="mt-24">
         {services.map((s, i) => (
-          <article key={s.title} className="border-t border-paper/15">
-            <header className="sticky z-10 grid grid-cols-12 items-baseline bg-ink py-5" style={{ top: i * 76 }}>
+          <article
+            key={s.title}
+            className="sticky min-h-[78svh] border-t border-paper/15 bg-ink"
+            style={{ top: 16 + i * 84, zIndex: i + 1 }}
+          >
+            <header className="grid grid-cols-12 items-baseline py-5">
               <span className="display col-span-3 text-4xl tab:text-6xl">0{i + 1}.</span>
-              <h3 className="display col-span-9 text-4xl tab:text-6xl">{s.title}</h3>
+              <h3 className="display col-span-8 text-4xl tab:text-6xl">{s.title}</h3>
+              <span aria-hidden className="col-span-1 justify-self-end text-2xl text-paper/60">
+                ↙
+              </span>
             </header>
-            <div className="grid grid-cols-12 pb-20">
+            <div className="grid grid-cols-12 pt-4 pb-20">
               <div className="col-span-12 tab:col-span-6 tab:col-start-4">
                 <p className="max-w-md text-lg text-paper/70">{s.text}</p>
                 <ul className="mt-8">

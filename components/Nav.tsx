@@ -6,7 +6,7 @@ import { useEffect, useState } from 'react'
 import { site } from '@/lib/site'
 import { useStore } from '@/lib/store'
 import { LogoMark } from './logo/LogoMark'
-import { LocalTime, Pill, ThemeToggle } from './ui'
+import { LocalTime, MotionToggle, Pill, ThemeToggle } from './ui'
 
 export function Nav() {
   const pathname = usePathname()
@@ -72,6 +72,7 @@ export function Nav() {
 
           <div className="flex items-center gap-4">
             <LocalTime className="hidden desk:inline" />
+            <MotionToggle className="hidden tab:inline-flex" />
             <ThemeToggle className="hidden tab:inline-flex" />
             <span className="hidden tab:inline-flex">
               <Pill href="/contact" variant="solid" active={active('/contact')} cursor="Say hi">
@@ -124,7 +125,10 @@ export function Nav() {
               </ul>
               <div className="mt-6 flex items-center justify-between border-t border-line pt-4">
                 <LocalTime />
-                <ThemeToggle />
+                <span className="flex items-center gap-4">
+                  <MotionToggle />
+                  <ThemeToggle />
+                </span>
               </div>
             </motion.div>
           </motion.div>

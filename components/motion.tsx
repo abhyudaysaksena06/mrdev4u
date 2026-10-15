@@ -1,5 +1,6 @@
 'use client'
-import { motion, useReducedMotion, type Variants } from 'motion/react'
+import { motion, type Variants } from 'motion/react'
+import { useReduced } from '@/lib/motion-pref'
 
 export const EASE = [0.12, 0.23, 0.5, 1] as const
 
@@ -17,7 +18,7 @@ export function Reveal({
   className?: string
   as?: 'div' | 'li' | 'section' | 'p'
 }) {
-  const reduce = useReducedMotion()
+  const reduce = useReduced()
   const M = motion[as]
   return (
     <M
@@ -36,7 +37,7 @@ export function Reveal({
 // The in-view trigger sits on the heading itself: the masked lines start clipped,
 // so observing them directly would never fire.
 export function LineReveal({ lines, className, as = 'h2' }: { lines: string[]; className?: string; as?: 'h1' | 'h2' }) {
-  const reduce = useReducedMotion()
+  const reduce = useReduced()
   const Tag = as === 'h1' ? motion.h1 : motion.h2
   const variants: Variants = {
     hidden: { y: reduce ? 0 : '105%', opacity: reduce ? 0 : 1 },

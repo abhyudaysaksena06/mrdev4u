@@ -3,6 +3,7 @@ import { Canvas, useFrame } from '@react-three/fiber'
 import { useRef } from 'react'
 import * as THREE from 'three'
 import { LogoMeshes, Lights } from './LogoMeshes'
+import { isReduced } from '@/lib/motion-pref'
 
 type Props = {
   compact?: boolean // scattered pieces need more room
@@ -21,7 +22,7 @@ function Toy({ assembled, spinKick, drag, scale }: Props & { drag: React.RefObje
       spinKick.current = 0
     }
     if (d.active) vel.current = d.v
-    else vel.current = THREE.MathUtils.damp(vel.current, 0.4, 1.2, dt)
+    else vel.current = THREE.MathUtils.damp(vel.current, isReduced() ? 0 : 0.4, 1.2, dt) // idle turn only with motion on
     group.current.rotation.y += vel.current * dt
     group.current.rotation.x = THREE.MathUtils.damp(group.current.rotation.x, -state.pointer.y * 0.25, 4, dt)
   })

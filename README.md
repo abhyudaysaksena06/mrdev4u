@@ -32,11 +32,15 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 ## How the motion works
 
 - **Intro:** pure CSS (`Intro timeline` in `globals.css`), so it starts at first paint. It plays on
-  the first page load of a session and is skipped after that and for reduced motion.
+  every full load of the home page and is skipped when you navigate back to home inside the site.
+- **Motion preference:** `<html data-motion="full|reduce">`, set before paint from the visitor's saved
+  choice or their OS setting. The nav's *Motion* toggle overrides it, and visitors whose OS has
+  animations off get a one-time notice offering to turn motion on. Reduced mode keeps a short, still
+  preloader, fades instead of slides, no smooth scroll, and a 3D logo without idle spin.
 - **One curve:** `--ease-out: cubic-bezier(0.12, 0.23, 0.5, 1)`, measured from grigoletti.ch.
 - **3D logo:** `components/logo/`. Loads only after the intro *and* the visitor's first
-  interaction, on devices with WebGL2 and no reduced-motion or data-saver setting. Everyone else
-  gets the SVG mark. Rendering stops once the logo has docked.
+  interaction, on devices with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
+  Rendering stops once the logo has docked.
 - **Smooth scroll:** Lenis on fine-pointer devices only.
 - **Page transitions:** View Transitions API via `next-view-transitions`; project covers morph
   into the case-study hero.

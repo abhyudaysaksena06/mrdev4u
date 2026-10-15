@@ -1,8 +1,10 @@
 'use client'
 import { Link } from 'next-view-transitions'
-import { motion, useMotionValue, useSpring, useReducedMotion } from 'motion/react'
+import { motion, useMotionValue, useSpring } from 'motion/react'
+import { useReduced } from '@/lib/motion-pref'
 import { useEffect, useState } from 'react'
 import { site } from '@/lib/site'
+import { setMotion } from '@/lib/motion-pref'
 
 // Label that rolls up to a second copy on hover (the copy is hidden from screen readers).
 export function RollText({ children, hoverClass = '' }: { children: string; hoverClass?: string }) {
@@ -73,7 +75,7 @@ export function Pill({
 
 // Wraps anything in a gentle magnetic pull toward the pointer (fine pointers only).
 export function Magnetic({ children, strength = 0.18 }: { children: React.ReactNode; strength?: number }) {
-  const reduce = useReducedMotion()
+  const reduce = useReduced()
   const x = useMotionValue(0)
   const y = useMotionValue(0)
   const spring = { stiffness: 500, damping: 60, mass: 1 }
@@ -153,5 +155,80 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
       </span>
       <span suppressHydrationWarning>{theme ?? 'theme'}</span>
     </button>
+  )
+}
+
+// Lets visitors whose OS has animations turned off opt back in (and vice versa).
+export function MotionToggle({ className = '' }: { className?: string }) {
+  const reduced = useReduced()
+  const [ready, setReady] = useState(false)
+  useEffect(() => setReady(true), [])
+  return (
+    <button
+      type="button"
+      onClick={() => setMotion(reduced ? 'full' : 'reduce')}
+      aria-label={`motion ${reduced ? 'off' : 'on'}, turn ${reduced ? 'on' : 'off'}`}
+      aria-pressed={!reduced}
+      data-cursor={reduced ? 'Motion on' : 'Motion off'}
+      className={`inline-flex items-center gap-2 font-mono text-xs uppercase text-body hover:text-ink ${className}`}
+    >
+      <span className={`relative h-3 w-5 rounded-full border border-current transition-colors ${reduced ? '' : 'bg-current'}`}>
+        <span
+          className={`absolute top-1/2 size-1.5 -translate-y-1/2 rounded-full transition-[left] duration-300 ${reduced ? 'left-0.5 bg-current' : 'left-[9px] bg-paper'}`}
+        />
+      </span>
+      <span suppressHydrationWarning>{ready ? `motion ${reduced ? 'off' : 'on'}` : 'motion'}</span>
+    </button>
+  )
+}
+
+// If motion is reduced only because of the OS setting, say so once and offer to turn it on.
+export function MotionNotice() {
+  const [show, setShow] = useState(false)
+  useEffect(() => {
+    const root = document.documentElement
+    let dismissed = false
+    try {
+      dismissed = !!localStorage.getItem('motion-notice')
+    } catch {}
+    if (root.dataset.motion === 'reduce' && root.dataset.motionSource === 'system' && !dismissed) {
+      const id = setTimeout(() => setShow(true), 1500)
+      return () => clearTimeout(id)
+    }
+  }, [])
+  const close = (m?: 'full') => {
+    if (m) setMotion(m)
+    try {
+      localStorage.setItem('motion-notice', '1')
+    } catch {}
+    setShow(false)
+  }
+  if (!show) return null
+  return (
+    <div
+      role="status"
+      className="fixed right-4 bottom-4 z-[70] max-w-xs rounded-lg border border-ink bg-paper p-4 text-sm text-body shadow-[0_8px_30px_rgba(0,0,0,0.15)] tab:right-8 tab:bottom-8"
+    >
+      <p>
+        Animations are reduced to match your system settings. This site is built around motion and a 3D logo; want them
+        on?
+      </p>
+      <div className="mt-3 flex gap-2">
+        <button
+          type="button"
+          onClick={() => close('full')}
+          className="rounded-[4px] bg-ink px-3 py-2 font-display text-sm uppercase text-paper hover:bg-accent hover:text-[#111]"
+        >
+          Turn motion on
+        </button>
+        <button
+          type="button"
+          onClick={() => close()}
+          className="rounded-[4px] border border-ink px-3 py-2 font-display text-sm uppercase text-ink"
+        >
+          Keep it calm
+        </button>
+      </div>
+    </div>
   )
 }

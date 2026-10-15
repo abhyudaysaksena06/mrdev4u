@@ -2,6 +2,7 @@
 import dynamic from 'next/dynamic'
 import { useEffect, useState } from 'react'
 import { setStore, useStore } from '@/lib/store'
+import { isReduced } from '@/lib/motion-pref'
 import { LogoMark } from './LogoMark'
 import { canUse3D } from './LogoMeshes'
 
@@ -13,14 +14,12 @@ export const HERO_ANCHOR_ID = 'hero-logo-anchor'
 function useIntroClock() {
   useEffect(() => {
     const root = document.documentElement
-    const skip = root.classList.contains('no-intro') || matchMedia('(prefers-reduced-motion: reduce)').matches
-    const id = setTimeout(
-      () => {
-        root.classList.add('no-intro') // client-side visits back to home skip the preloader
-        setStore({ introDone: true })
-      },
-      skip ? 0 : 1900,
-    )
+    // Matches the CSS timeline: full intro ~1.9 s, reduced ~0.8 s, skipped on client-side returns.
+    const wait = root.classList.contains('no-intro') ? 0 : isReduced() ? 800 : 1900
+    const id = setTimeout(() => {
+      root.classList.add('no-intro') // navigating back to home inside the site skips the preloader
+      setStore({ introDone: true })
+    }, wait)
     return () => clearTimeout(id)
   }, [])
 }

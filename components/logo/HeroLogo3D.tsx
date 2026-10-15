@@ -3,6 +3,7 @@ import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { useEffect, useRef } from 'react'
 import * as THREE from 'three'
 import { setStore } from '@/lib/store'
+import { isReduced } from '@/lib/motion-pref'
 import { LOGO_W } from './geometry'
 import { LogoMeshes, Lights } from './LogoMeshes'
 
@@ -14,7 +15,7 @@ const dockProgress = () => clamp(window.scrollY / (window.innerHeight * 0.65), 0
 function Logo({ anchorId, slotId }: { anchorId: string; slotId: string }) {
   const outer = useRef<THREE.Group>(null!)
   const inner = useRef<THREE.Group>(null!)
-  const spin = useRef(-Math.PI * 1.25) // enters with a turn from flat to 3D
+  const spin = useRef(isReduced() ? 0 : -Math.PI * 1.25) // enters with a turn from flat to 3D
   const tilt = useRef(new THREE.Vector2())
   const first = useRef(true)
   const setFrameloop = useThree(s => s.setFrameloop)
@@ -59,7 +60,7 @@ function Logo({ anchorId, slotId }: { anchorId: string; slotId: string }) {
     tilt.current.x = damp(tilt.current.x, -state.pointer.y * 0.35, 5, dt)
     tilt.current.y = damp(tilt.current.y, state.pointer.x * 0.55, 5, dt)
     spin.current = damp(spin.current, 0, 1.8, dt) // entrance turn settles
-    const sway = Math.sin(state.clock.elapsedTime * 0.6) * 0.3
+    const sway = isReduced() ? 0 : Math.sin(state.clock.elapsedTime * 0.6) * 0.3
     inner.current.rotation.x = tilt.current.x * (1 - e)
     inner.current.rotation.y = (tilt.current.y + spin.current + sway) * (1 - e)
 

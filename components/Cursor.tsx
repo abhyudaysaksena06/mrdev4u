@@ -1,5 +1,6 @@
 'use client'
 import { useEffect, useRef, useState } from 'react'
+import { isReduced } from '@/lib/motion-pref'
 
 // 16 px blend-mode square that follows the pointer. Any element with
 // data-cursor="LABEL" turns it into a label pill while hovered.
@@ -12,7 +13,6 @@ export function Cursor() {
   useEffect(() => {
     if (!matchMedia('(pointer: fine)').matches) return
     setOn(true)
-    const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches
     let x = -100, y = -100, cx = x, cy = y, raf = 0, visible = false
 
     const move = (e: PointerEvent) => {
@@ -32,13 +32,16 @@ export function Cursor() {
     }
     // Scrolling moves content under a still pointer, so re-check what is underneath.
     const scroll = () => visible && pick(document.elementFromPoint(x, y))
+    // Hide when the pointer leaves the window or the tab loses focus (otherwise the square
+    // can be left stranded at the last position, e.g. the top-left corner).
+    const out = (e: MouseEvent) => !e.relatedTarget && leave()
     const leave = () => {
       visible = false
       dot.current?.style.setProperty('opacity', '0')
       setLabel(null)
     }
     const tick = () => {
-      const k = reduce ? 1 : 0.22
+      const k = isReduced() ? 1 : 0.22
       cx += (x - cx) * k
       cy += (y - cy) * k
       const t = `translate3d(${cx}px, ${cy}px, 0)`
@@ -49,13 +52,15 @@ export function Cursor() {
     raf = requestAnimationFrame(tick)
     window.addEventListener('pointermove', move, { passive: true })
     window.addEventListener('scroll', scroll, { passive: true })
-    document.documentElement.addEventListener('pointerleave', leave)
+    document.addEventListener('mouseout', out)
+    window.addEventListener('blur', leave)
     document.documentElement.classList.add('has-cursor')
     return () => {
       cancelAnimationFrame(raf)
       window.removeEventListener('pointermove', move)
       window.removeEventListener('scroll', scroll)
-      document.documentElement.removeEventListener('pointerleave', leave)
+      document.removeEventListener('mouseout', out)
+      window.removeEventListener('blur', leave)
       document.documentElement.classList.remove('has-cursor')
     }
   }, [])

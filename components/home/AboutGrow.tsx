@@ -1,5 +1,6 @@
 'use client'
-import { motion, useInView, useReducedMotion, useScroll, useTransform } from 'motion/react'
+import { motion, useInView, useScroll, useTransform } from 'motion/react'
+import { useReduced } from '@/lib/motion-pref'
 import { useRef } from 'react'
 import { site, values } from '@/lib/site'
 import { Magnetic, Pill } from '../ui'
@@ -7,7 +8,7 @@ import { Magnetic, Pill } from '../ui'
 // A small dark box that grows to full width as it scrolls in, then becomes the About section.
 export function AboutGrow() {
   const ref = useRef<HTMLDivElement>(null)
-  const reduce = useReducedMotion()
+  const reduce = useReduced()
   const { scrollYProgress } = useScroll({ target: ref, offset: ['start end', 'start 0.15'] })
   const scale = useTransform(scrollYProgress, [0, 1], [0.55, 1])
   const radius = useTransform(scrollYProgress, [0, 1], [28, 8])
