@@ -7,7 +7,7 @@ export function Services() {
   return (
     <section
       aria-label="What I do"
-      className="relative z-10 rounded-t-lg bg-ink px-4 pt-28 pb-24 text-paper tab:px-8 tab:pt-40"
+      className="bg-grid relative z-10 rounded-t-lg bg-ink px-4 pt-28 pb-24 text-paper tab:px-8 tab:pt-40"
     >
       <div className="grid gap-8 tab:grid-cols-12">
         <div className="tab:col-span-7">
@@ -27,7 +27,7 @@ export function Services() {
         {services.map((s, i) => (
           <article
             key={s.title}
-            className="sticky border-t border-paper/15 bg-ink"
+            className="bg-grid sticky border-t border-paper/15 bg-ink"
             style={{
               top: `calc(16px + ${i} * var(--hh))`,
               minHeight: `calc(var(--card) + ${services.length - 1 - i} * var(--hh))`,

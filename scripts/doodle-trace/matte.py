@@ -21,6 +21,16 @@ def flood(seed, allow):
         m=n
 seed=np.zeros((H,W),bool); seed[0]=seed[-1]=True; seed[:,0]=seed[:,-1]=True
 bg=flood(seed,bglike)
+# second pass: slightly bluer light pixels reachable from the background (the thin slivers between
+# the arms and the body). Face and tee are enclosed by outlines, so the flood never reaches them.
+G=im[:,:,1]
+loose=(mn>175)&(B<=251)&(G<=251)
+bg=flood(bg,loose|bg)
+# the slivers of background between each sleeve and the body are closed off by antialiasing,
+# so mark the light pixels in those two narrow gaps (above the cuffs) explicitly
+for gx0,gx1 in [(285,311),(465,496)]:
+    gap=np.zeros_like(bg); gap[480:567,gx0:gx1]=True
+    bg|=gap&(mn>170)
 # remaining bg-like components that are large (enclosed background pockets)
 rest=bglike&~bg
 print('bg px',bg.sum(),'rest bglike px',rest.sum())

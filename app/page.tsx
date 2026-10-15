@@ -9,8 +9,11 @@ import { AboutGrow } from '@/components/home/AboutGrow'
 import { CtaCard } from '@/components/CtaCard'
 import { LineReveal, Marquee, Reveal } from '@/components/motion'
 import { Magnetic, Pill } from '@/components/ui'
+import { preload } from 'react-dom'
 
 export default function Home() {
+  // The doodle stars in the preloader and the hero: fetch it right away.
+  preload('/doodle.svg', { as: 'image', fetchPriority: 'high' })
   return (
     <>
       <Preloader />
@@ -54,7 +57,7 @@ export default function Home() {
 
       <Services />
 
-      <section aria-label="Selected work" className="relative z-10 bg-paper px-4 pt-32 pb-12 tab:px-8">
+      <section aria-label="Selected work" className="bg-grid relative z-10 bg-paper px-4 pt-32 pb-12 tab:px-8">
         <div className="mb-14 grid gap-6 tab:grid-cols-12">
           <div className="tab:col-span-7">
             <LineReveal lines={['Selected work']} className="display text-7xl tab:text-[8rem]" />
@@ -66,7 +69,7 @@ export default function Home() {
         <WorkRows projects={projects} />
       </section>
 
-      <div className="relative z-10 bg-paper">
+      <div className="bg-grid relative z-10 bg-paper">
         <AboutGrow />
         <section aria-label="Toolkit" className="py-16">
           <p className="mb-6 px-4 font-mono text-xs uppercase text-muted tab:px-8">Toolkit</p>

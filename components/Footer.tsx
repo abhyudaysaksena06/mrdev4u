@@ -1,34 +1,7 @@
-import { Link } from 'next-view-transitions'
 import { site } from '@/lib/site'
 import { LogoMark } from './logo/LogoMark'
+import { FooterCells } from './FooterCells'
 import { Wordmark } from './Wordmark'
-import { RollText } from './ui'
-
-// Big link cell: the label sits bottom-left; on hover the cell fills with ink from the bottom.
-function Cell({ href, title, top }: { href: string; title: string; top: React.ReactNode }) {
-  return (
-    <div className="group relative flex min-w-0 flex-col justify-between border-r border-line p-3 last:border-r-0 tab:p-6">
-      <span
-        aria-hidden
-        className="pointer-events-none absolute inset-0 origin-bottom scale-y-0 bg-ink transition-transform duration-500 ease-soft group-hover:scale-y-100"
-      />
-      <div className="relative z-10 hidden min-w-0 items-center gap-3 tab:flex">{top}</div>
-      <span aria-hidden className="relative z-10 self-end font-mono text-xs text-muted tab:hidden">↗</span>
-      {/* The link's ::after covers the whole cell, so the entire cell is clickable. */}
-      <Link
-        href={href}
-        data-cursor={title}
-        className="display mt-auto text-[min(7.5vw,9.5svh)] transition-colors duration-300 group-hover:text-paper after:absolute after:inset-0 after:z-20 after:content-['']"
-      >
-        <span className="relative z-10">
-          <RollText>{title}</RollText>
-        </span>
-      </Link>
-    </div>
-  )
-}
-
-const top = 'truncate font-mono text-xs uppercase text-body group-hover:text-paper/70'
 
 /**
  * The footer fills exactly one screen, so the last scroll shows everything at once:
@@ -36,21 +9,9 @@ const top = 'truncate font-mono text-xs uppercase text-body group-hover:text-pap
  */
 export function Footer() {
   return (
-    <footer className="relative z-10 flex min-h-svh flex-col overflow-hidden bg-paper tab:min-h-[min(100svh,75vw)]">
-      {/* Row 1: three big link cells */}
-      <div className="grid h-[clamp(5.5rem,15.5svh,7.5rem)] shrink-0 grid-cols-3 border-y border-line tab:h-[clamp(7rem,19svh,12rem)]">
-        <Cell
-          href="/work"
-          title="Work"
-          top={
-            <span className="flex items-center gap-2 font-display text-lg uppercase group-hover:text-paper">
-              <LogoMark className="h-5 w-10" /> {site.handle}
-            </span>
-          }
-        />
-        <Cell href="/about" title="About" top={<span className={top}>{site.role} · {site.name}</span>} />
-        <Cell href="/contact" title="Contact" top={<span className={top}>{site.email}</span>} />
-      </div>
+    <footer className="bg-grid relative z-10 flex min-h-svh flex-col overflow-hidden bg-paper tab:min-h-[min(100svh,75vw)]">
+      {/* Row 1: three big link cells, for every page but this one */}
+      <FooterCells />
 
       {/* Row 2: the invitation on the left; links, availability and email on the right */}
       <div className="flex flex-1 flex-col gap-6 px-4 py-[3svh] tab:grid tab:grid-cols-12 tab:gap-6 tab:px-6 tab:py-[3svh]">

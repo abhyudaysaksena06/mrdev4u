@@ -31,8 +31,11 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 
 ## How the motion works
 
-- **Intro:** pure CSS (`Intro timeline` in `globals.css`), so it starts at first paint. It plays on
-  every full load of the home page and is skipped when you navigate back to home inside the site.
+- **Intro:** pure CSS (`Intro timeline` in `globals.css`), so it starts at first paint. For about
+  4 s the doodle pushes the m/ logo into the centre of the screen, hops, then the curtain lifts. It
+  plays on every full load of the home page and is skipped when you navigate back to home inside
+  the site. Change its length with `--intro-base` and the `.preloader` timings together (and the
+  matching wait in `HeroDoodle.tsx`).
 - **Motion preference:** `<html data-motion="full|reduce">`, set before paint from the visitor's saved
   choice or their OS setting. The nav's *Motion* toggle overrides it, and visitors whose OS has
   animations off get a one-time notice offering to turn motion on. Reduced mode keeps a short, still

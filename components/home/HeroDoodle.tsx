@@ -7,8 +7,8 @@ import { isReduced } from '@/lib/motion-pref'
 function useIntroClock() {
   useEffect(() => {
     const root = document.documentElement
-    // Matches the CSS timeline: full intro ~1.9 s, reduced ~0.8 s, skipped on client-side returns.
-    const wait = root.classList.contains('no-intro') ? 0 : isReduced() ? 800 : 1900
+    // Matches the CSS timeline: full intro ~4 s, reduced ~0.8 s, skipped on client-side returns.
+    const wait = root.classList.contains('no-intro') ? 0 : isReduced() ? 800 : 4000
     const id = setTimeout(() => {
       root.classList.add('no-intro') // navigating back to home inside the site skips the preloader
       setStore({ introDone: true })
@@ -120,18 +120,23 @@ function useLookAt(svg: SVGSVGElement | null) {
 }
 
 const TITLE = 'Doodle of Abhyuday'
-const SIZE = 'h-[34svh] w-auto tab:h-[42svh] desk:h-[min(68svh,46rem)]'
+// Things he says when clicked, in turn.
+const LINES = ["Hi! I'm Abhyuday", 'Yes, I built all of this', 'Scroll down, it gets better', "Got a project? Let's talk"]
 
 /**
- * The hero element: the doodle, traced from the reference drawing (scripts/doodle-trace).
- * It first shows as a plain <img> so the page stays light, then the same file (now cached) is
- * inlined so its parts can move and he keeps an eye on your cursor.
+ * The hero element: the top half of the doodle (traced from the reference drawing, see
+ * scripts/doodle-trace), rising from the bottom edge after the preloader. It first shows as a
+ * plain <img> so the page stays light, then the same cached file is inlined so his parts can move:
+ * he follows your cursor, and clicking him makes him hop and say something.
  */
 export function HeroDoodle() {
   useIntroClock()
   const img = useRef<HTMLImageElement>(null)
   const slot = useRef<HTMLSpanElement>(null)
+  const hopper = useRef<HTMLDivElement>(null)
+  const count = useRef(0)
   const [svg, setSvg] = useState<SVGSVGElement | null>(null)
+  const [said, setSaid] = useState<{ n: number; text: string } | null>(null)
   useLookAt(svg)
 
   useEffect(() => {
@@ -143,9 +148,8 @@ export function HeroDoodle() {
         const parsed = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement
         if (parsed.nodeName !== 'svg') return
         const el = document.importNode(parsed, true) as unknown as SVGSVGElement
-        el.setAttribute('class', `${SIZE} overflow-visible`)
-        el.setAttribute('role', 'img')
-        el.setAttribute('aria-label', TITLE)
+        el.setAttribute('class', 'block h-auto w-full overflow-visible')
+        el.setAttribute('aria-hidden', 'true')
         slot.current.replaceChildren(el)
         if (img.current) img.current.hidden = true // swap in the same frame: no double figure
         setSvg(el)
@@ -156,10 +160,46 @@ export function HeroDoodle() {
     }
   }, [])
 
+  // The speech bubble fades out after a moment.
+  useEffect(() => {
+    if (!said) return
+    const id = setTimeout(() => setSaid(null), 2600)
+    return () => clearTimeout(id)
+  }, [said])
+
+  const hi = () => {
+    const n = count.current++
+    setSaid({ n, text: LINES[n % LINES.length] })
+    if (!isReduced())
+      hopper.current?.animate(
+        [{ transform: 'none' }, { transform: 'translateY(-7%)', offset: 0.35 }, { transform: 'none', offset: 0.7 }, { transform: 'translateY(-2%)', offset: 0.85 }, { transform: 'none' }],
+        { duration: 650, easing: 'cubic-bezier(0.3, 0.7, 0.4, 1)' },
+      )
+  }
+
   return (
-    <div className="intro-fade flex justify-center" style={{ ['--d' as string]: '120ms' }}>
-      <img ref={img} src="/doodle.svg" alt={TITLE} width={984} height={2169} className={SIZE} />
-      <span ref={slot} className="contents" />
+    <div className="relative flex justify-center">
+      {/* Only his top half shows: the box crops the drawing just above the hands and fades out at the bottom. */}
+      <button
+        type="button"
+        onClick={hi}
+        aria-label="Say hi to the doodle"
+        data-cursor="Say hi"
+        className="doodle-bust relative block aspect-[984/1330] h-[30svh] overflow-hidden tab:h-[38svh] desk:h-[min(58svh,40rem)]"
+      >
+        <div ref={hopper} className="size-full">
+          <div className="doodle-rise">
+            <img ref={img} src="/doodle.svg" alt={TITLE} width={984} height={2169} className="block h-auto w-full" />
+            <span ref={slot} className="contents" />
+          </div>
+        </div>
+      </button>
+      <p
+        aria-live="polite"
+        className={`pointer-events-none absolute top-[2%] left-1/2 -translate-x-[115%] whitespace-nowrap rounded-[4px] border border-ink bg-paper px-3 py-2 font-display text-sm uppercase leading-none transition-[opacity,translate] duration-300 ease-soft tab:text-base ${said ? 'opacity-100' : 'translate-y-2 opacity-0'}`}
+      >
+        {said?.text}
+      </p>
     </div>
   )
 }

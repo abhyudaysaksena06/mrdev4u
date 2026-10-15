@@ -18,8 +18,11 @@ P={'noise':[(119,141,136),(164,178,185)],'ink':[(8,21,30),(27,46,57),(36,59,71)]
 FILL={'ink':'#1b2d39','slate':'#3d4c57','green':'#426a5f','white':'#fafdfc','shade':'#cbdadf','lime':'#9fcc99','dgreen':'#3d6749'}
 cls=np.full((H,W),'',object)
 rgb=q[:,:,:3]
-for k,cs in P.items():
-    for c in cs: cls[(rgb==c).all(2)&alpha]=k
+# map each traced colour to the class of the nearest reference colour (k-means drifts a little)
+refs=[(k,np.array(c)) for k,cs in P.items() for c in cs]
+for c in np.unique(rgb[alpha],axis=0):
+    k=min(refs,key=lambda r:((r[1]-c)**2).sum())[0]
+    cls[(rgb==c).all(2)&alpha]=k
 assert (cls[alpha]!='').all(), 'unmapped colours'
 # blended edge pixels take the most common real colour around them
 def boxsum(m,r):

@@ -43,6 +43,38 @@
 html {
   background: var(--paper);
   color: var(--ink);
+  scrollbar-width: none; /* no visible scrollbar; the page still scrolls */
+}
+html::-webkit-scrollbar {
+  display: none;
+}
+
+/* Background grid: hairlines in the text colour, so it works on paper, on ink panels and in both
+   themes. On desktop it is pinned to the viewport, so lines run on across section edges. */
+:root {
+  --grid-size: 4rem;
+}
+@media (min-width: 810px) {
+  :root {
+    --grid-size: 6rem;
+  }
+}
+body,
+.bg-grid,
+.preloader {
+  --grid-line: color-mix(in srgb, currentColor 6%, transparent);
+  background-image:
+    linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+  background-size: var(--grid-size) var(--grid-size);
+  background-position: -1px -1px;
+}
+@media (hover: hover) and (pointer: fine) {
+  body,
+  .bg-grid,
+  .preloader {
+    background-attachment: fixed;
+  }
 }
 
 body {
@@ -180,7 +212,7 @@ body::after {
   initial-value: 0;
 }
 :root {
-  --intro-base: 1.45s; /* when the hero starts revealing after the preloader */
+  --intro-base: 3.65s; /* when the hero starts revealing after the preloader */
 }
 html.no-intro {
   --intro-base: 0.05s;
@@ -191,7 +223,7 @@ html.no-intro {
   inset: 0;
   z-index: 60;
   background: var(--paper);
-  animation: curtain 0.65s var(--ease-inout) 1.15s both;
+  animation: curtain 0.65s var(--ease-inout) 3.35s both;
 }
 html.no-intro .preloader {
   display: none;
@@ -202,23 +234,91 @@ html.no-intro .preloader {
     visibility: hidden;
   }
 }
-.preloader .piece {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: assemble 0.85s var(--ease-out) var(--d) both;
+/* The doodle pushes the logo in: 0.3 s to 2.4 s, with two short "effort" pauses on the way. */
+.preloader .pusher {
+  animation: push 2.1s cubic-bezier(0.45, 0, 0.3, 1) 0.3s both;
 }
-@keyframes assemble {
-  from {
-    transform: translate(var(--dx), var(--dy)) rotate(var(--rot));
-    opacity: 0;
+@keyframes push {
+  0% {
+    transform: translateX(-85vw);
+  }
+  30% {
+    transform: translateX(-55vw);
+  }
+  38% {
+    transform: translateX(-52vw);
+  }
+  68% {
+    transform: translateX(-16vw);
+  }
+  76% {
+    transform: translateX(-13vw);
+  }
+  96% {
+    transform: translateX(0.6vw);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+.preloader .push-lean {
+  transform-origin: 50% 97%;
+  animation: push-lean 2.6s var(--ease-out) 0.3s both;
+}
+@keyframes push-lean {
+  0%,
+  78% {
+    transform: rotate(7deg);
+  }
+  86% {
+    transform: rotate(-2deg);
+  }
+  100% {
+    transform: rotate(0);
+  }
+}
+.preloader .push-walk {
+  animation: push-walk 0.3s ease-in-out 0.3s 7 alternate both;
+}
+@keyframes push-walk {
+  to {
+    transform: translateY(-2.5%);
+  }
+}
+.preloader .push-hop {
+  animation: push-hop 0.75s var(--ease-out) 2.75s both;
+}
+@keyframes push-hop {
+  0%,
+  100% {
+    transform: translateY(0);
   }
   35% {
-    opacity: 1;
+    transform: translateY(-14%);
+  }
+  65% {
+    transform: translateY(0);
+  }
+  82% {
+    transform: translateY(-4%);
+  }
+}
+.preloader .push-logo {
+  transform-origin: 50% 100%;
+  animation: push-thud 0.4s var(--ease-out) 2.3s both;
+}
+@keyframes push-thud {
+  0%,
+  100% {
+    transform: none;
+  }
+  35% {
+    transform: scale(1.05, 0.94);
   }
 }
 .preloader .counter {
   counter-reset: n var(--n);
-  animation: count 1.05s var(--ease-out) both;
+  animation: count 3.2s var(--ease-out) both;
 }
 .preloader .counter::after {
   content: counter(n, decimal-leading-zero);
@@ -245,9 +345,13 @@ html.no-intro .preloader {
   animation: word-in 0.45s var(--ease-out) both;
   animation-delay: calc(var(--intro-base) + 250ms + var(--d));
 }
+/* Words wipe in left to right (clip, not opacity), so the text is always at full contrast. */
 @keyframes word-in {
   from {
-    opacity: 0.1;
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 -2% 0 0);
   }
 }
 .intro-fade {
@@ -261,7 +365,8 @@ html.no-intro .preloader {
   }
 }
 
-/* Reduced motion keeps a short, still preloader (no flying pieces) and fades instead of slides. */
+/* Reduced motion keeps a short, still preloader (the doodle just stands by the logo) and fades
+   instead of slides. */
 :root[data-motion='reduce'] {
   --intro-base: 0.75s;
 }
@@ -271,7 +376,7 @@ html.no-intro .preloader {
 :root[data-motion='reduce'] .preloader {
   animation: fade-away 0.3s ease 0.45s both;
 }
-:root[data-motion='reduce'] .preloader .piece {
+:root[data-motion='reduce'] .preloader :is(.pusher, .push-lean, .push-walk, .push-hop, .push-logo) {
   animation: none;
 }
 :root[data-motion='reduce'] .preloader .counter {
@@ -303,6 +408,24 @@ html.no-intro .preloader {
 :root[data-theme='dark'] .doodle-shadow {
   fill: #000;
   opacity: 0.55;
+}
+/* Hero: only the doodle's top half shows, fading out at the bottom; he rises in after the intro. */
+.doodle-bust {
+  -webkit-mask-image: linear-gradient(to bottom, #000 74%, transparent 99%);
+  mask-image: linear-gradient(to bottom, #000 74%, transparent 99%);
+}
+.doodle-rise {
+  animation: doodle-rise 0.9s cubic-bezier(0.34, 1.4, 0.5, 1) both;
+  animation-delay: calc(var(--intro-base) + 0.1s);
+}
+@keyframes doodle-rise {
+  from {
+    transform: translateY(70%);
+  }
+}
+:root[data-motion='reduce'] .doodle-rise {
+  animation-name: fade-only;
+  animation-duration: 0.3s;
 }
 /* Blink every few seconds. The pupils' parent carries the look-at transform, so the blink
    scales this inner group only. */
