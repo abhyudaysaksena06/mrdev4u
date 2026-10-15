@@ -4,7 +4,12 @@
 #   python3 build_model.py <out_dir> [--render] [--glb]
 #
 # Writes <out_dir>/doodle.blend, plus front/three-quarter/side/back renders with --render and
-# <out_dir>/doodle.glb with --glb.
+# <out_dir>/doodle.glb (skinned, for three.js) with --glb. The committed doodle.blend next to this
+# script is its output; preview/ has the turnaround and a rig test.
+#
+# Rig: root > hips > spine > chest > neck > head, shoulder > upper_arm > forearm > hand and
+# thigh > shin > foot per side. Legs are IK (foot_ik, knee_pole controls); arms are FK with an IK
+# (hand_ik, elbow_pole) ready to switch on through the constraint's influence.
 #
 # Everything is measured in pixels of the reference drawing (x right, y down, d = depth, negative
 # toward the viewer) and converted to metres by P(): the figure stands 1.75 m tall on the origin,
@@ -274,13 +279,17 @@ def decal(name, polys, target_objs, mat, lift=0.8, closed_fill=True):
     dg = bpy.context.evaluated_depsgraph_get()
     trees = [BVHTree.FromObject(o, dg) for o in target_objs]
 
+    last = [None]
+
     def drop(x, y):
         o = P(x, y, -400)
         hits = [t.ray_cast(o, Vector((0, 1, 0))) for t in trees]
         hits = [h for h in hits if h[0] is not None]
-        if not hits:
-            return P(x, y, 0), Vector((0, -1, 0))
+        if not hits:  # just off the edge: stay at the depth of the last point that landed
+            p, nrm = last[0] or (P(x, y, 0), Vector((0, -1, 0)))
+            return Vector((P(x, y).x, p.y, P(x, y).z)), nrm
         h = min(hits, key=lambda h: h[3])
+        last[0] = (h[0], h[1])
         return h[0], h[1]
     verts, faces = [], []
     for poly in polys:
@@ -372,6 +381,18 @@ def part(ob, bones, line=LINE):
     return ob
 
 
+def seam(name, y, hw, hd, bones, x=CX, dc=0.0, gap=None, w=2.0):
+    """An ink line drawn round a body at height y: where two parts meet at the same depth (a cuff
+    under a sleeve, a hem band under the hoodie) the outlines cannot show, so the seam is drawn."""
+    a0, a1, n = 0.0, 2 * pi, 40
+    if gap:
+        phi = asin(gap / hw)
+        a0, a1 = -pi / 2 + phi, 3 * pi / 2 - phi
+    pts = [(x + hw * cos(t), y, dc + hd * sin(t)) for t in (a0 + (a1 - a0) * i / n for i in range(n + 1))]
+    ob = tube(name, pts, [w / 2] * len(pts), ['ink'], ref=Vector((0, 0, 1)), n=8, caps=(None, None) if not gap else (0.8, 0.8))
+    return part(ob, bones, 0)
+
+
 # ================================================================ HEAD
 # Face rings: (y, half width, half depth, centre depth), measured inside the drawn outline.
 HEAD = [(184, 30, 40, 6), (192, 42, 52, 5), (205, 49, 58, 3), (225, 51, 60, 1), (270, 51, 60, 0),
@@ -392,10 +413,11 @@ for side in (-1, 1):
 # scallops like the drawing without lines between the curls.
 HAIR = [
     # cap over the skull and the back of the head: (x, y, d, half width, half height, half depth)
-    (386, 214, 2, 56, 46, 66), (386, 252, 36, 52, 34, 40),
+    (386, 216, 2, 56, 44, 66), (386, 252, 36, 52, 34, 40), (386, 280, 42, 46, 24, 28),
+    (340, 262, 30, 18), (432, 262, 30, 18), (352, 282, 38, 16), (420, 282, 38, 16),
     # big curls on the outline
-    (342, 192, -4, 24), (368, 180, -8, 22), (396, 178, -8, 23), (424, 186, -6, 22), (442, 206, 0, 17),
-    (443, 230, 4, 15), (440, 248, 8, 12), (328, 212, 0, 19), (325, 236, 4, 15), (330, 250, 8, 11),
+    (342, 196, -4, 22), (368, 185, -8, 20), (396, 183, -8, 21), (424, 190, -6, 20), (444, 208, 0, 16),
+    (445, 230, 4, 15), (441, 248, 8, 12), (327, 216, 0, 20), (324, 238, 4, 15), (329, 251, 8, 11),
     # fringe: a lock on his right, a parting, the rest swept to his left
     (338, 228, -40, 14), (345, 238, -48, 11), (380, 220, -56, 15), (402, 221, -58, 15), (424, 225, -52, 15),
     (438, 232, -42, 12), (360, 202, -50, 17), (388, 198, -56, 18), (414, 202, -54, 17),
@@ -438,9 +460,9 @@ MOUTH = [(365.5, 305.2), (380, 303.5), (395, 302.2), (409.5, 301.2)]
 MOUTH_LOW = [(409.5, 301.2), (405, 308), (397, 313.5), (387, 315.6), (377, 314), (370, 310), (365.5, 305.2)]
 part(decal('mouth_in', [MOUTH + MOUTH_LOW[1:-1]], face_t, 'skin', lift=1.0), ['head'], 0)
 part(decal('mouth', [stroke(MOUTH, 4.4), stroke(MOUTH_LOW, 4.0)], face_t, 'ink', lift=1.6, ), ['head'], 0)
-for side, cx in ((-1, 324.5), (1, 447.5)):
+for side, cx in ((-1, 328.5), (1, 443.5)):
     part(decal(f'earline.{"L" if side > 0 else "R"}',
-               [stroke([(cx + side * 1, 274), (cx - side * 3, 277), (cx - side * 3.5, 285), (cx + side * 0.5, 289)], 2.6)],
+               [stroke([(cx + side * 1, 275), (cx - side * 1.5, 277.5), (cx - side * 2, 284), (cx + side * 0.5, 288)], 2.4)],
                [PARTS[f'ear.{"L" if side > 0 else "R"}'][0]], 'ink', lift=0.8), ['head'], 0)
 
 # Glasses: round-cornered frames standing a little off the face, temples back to the ears.
@@ -466,7 +488,7 @@ part(glasses, ['head'], 0)
 # ================================================================ NECK, TEE, HOODIE
 neck = loft('neck', [hring(y, 22, 20, 3) for y in (322, 340, 360, 382)], ['skin'], caps=(None, None))
 smooth(neck)
-paint(neck, lambda p, f: 'shade' if p[1] < 352 or p[0] > CX + 2 else None)
+paint(neck, lambda p, f: 'shade' if p[1] < 350 else None)
 part(neck, ['neck', 'head', 'chest'])
 
 TEE = [(364, 27, 24, 4), (380, 46, 34, 3), (396, 66, 46, 2), (420, 76, 50, 0), (520, 76, 50, 0), (588, 75, 50, 0)]
@@ -493,9 +515,9 @@ collar_pts = []
 for i in range(29):
     t = 2 * pi * i / 28
     x, y = CX + 31 * cos(t), 373 - 10 * sin(t)
-    collar_pts.append((x, y, surf(TEE, x, y, sin(t) < 0) + (-3 if sin(t) < 0 else 3)))
-collar = tube('collar', collar_pts, [4.0] * 29, ['tee'], ref=Vector((0, 0, 1)), n=10, caps=(None, None))
-part(collar, ['chest', 'neck'])
+    collar_pts.append((x, y, surf(TEE, x, y, sin(t) < 0) + (-1.2 if sin(t) < 0 else 1.2)))
+collar = tube('collar', collar_pts, [2.0] * 29, ['ink'], ref=Vector((0, 0, 1)), n=8, caps=(None, None))
+part(collar, ['chest', 'neck'], 0)
 
 # Hoodie body: open at the front where the tee shows; the gap keeps its width all the way down.
 GAP = 26.5
@@ -518,6 +540,7 @@ hem = loft('hem', rings, ['hoodie'], closed=False)
 smooth(hem, 1)
 solidify(hem, 4.0, 'hoodin')
 part(hem, ['hips'])
+seam('hem_top', 576.5, 82.5, 58, ['hips'], gap=GAP + 1, w=3.2)
 
 # Hood: a thick rim around the neck, dark inside, with the lime piping on its outer edge.
 HOOD = [(354, 404, -50), (344, 384, -44), (333, 356, -30), (329, 336, -12), (334, 322, 10), (354, 314, 30),
@@ -579,11 +602,12 @@ def arm(side):
                 caps=(None, P(cx, 597, 2)))
     smooth(cuff)
     part(cuff, [f'forearm.{nm}'])
+    seam(f'cuff_top.{nm}', 576, 23.5, 22, [f'forearm.{nm}'], x=cx, dc=2, w=3.2)
 
     hand(side, nm, cx)
 
 
-def hand(side, nm, cx, turn=30):
+def hand(side, nm, cx, turn=18):
     """Relaxed hand hanging from the wrist, back of the hand to the front, thumb on the inner side.
 
     Built in hand space (px): X across the knuckles from little finger to index, Y out of the back
@@ -599,14 +623,14 @@ def hand(side, nm, cx, turn=30):
         return (w.x, 596 - z, w.y)
     Xw = Vector((X.x, X.y, 0))  # the same direction in Blender space (px depth is world y)
     pieces = [tube('palm', [H(0, 0, 4), H(0, 0, -6), H(0, -1, -20), H(0, -2, -30)],
-                   [(17, 8), (21, 9), (22, 9.5), (21, 9)], ['skin'], ref=Xw, n=16, e=2.6, caps=(0.5, 0.4))]
+                   [(17, 8), (21, 9), (22, 9.5), (21.5, 9)], ['skin'], ref=Xw, n=16, e=2.6, caps=(0.5, 0.4))]
     # little finger to index: knuckle x, length, spread
-    for fx, fl, sp in ((-15, 25, -4), (-5, 31, -1.5), (5, 32, 1), (15, 28, 3)):
-        k = H(fx, -2, -30)
-        mid = H(fx + sp * 0.5, -3, -30 - fl * 0.55)
-        tip = H(fx + sp, -7, -30 - fl)
-        pieces.append(tube('finger', [k, mid, tip], [5.4, 5.0, 4.6], ['skin'], ref=Xw, n=12, caps=(0.5, 0.95)))
-    pieces.append(tube('thumb', [H(16, -6, -8), H(24, -11, -22), H(27, -13, -36)], [6.6, 5.8, 5.2], ['skin'],
+    for fx, fl, sp, fd in ((-17.5, 26, -3, 1.5), (-6, 32, -1, 0.5), (6, 33, 1, -0.5), (17.5, 29, 3, -1.5)):
+        k = H(fx, -2 + fd, -28)
+        mid = H(fx + sp * 0.5, -3 + fd, -28 - fl * 0.55)
+        tip = H(fx + sp, -8 + fd, -28 - fl)
+        pieces.append(tube('finger', [k, mid, tip], [4.6, 4.3, 3.9], ['skin'], ref=Xw, n=12, caps=(0.5, 0.95)))
+    pieces.append(tube('thumb', [H(19, -6, -8), H(26, -12, -22), H(28, -15, -36)], [6.2, 5.4, 4.8], ['skin'],
                        ref=Xw, n=12, caps=(0.5, 0.95)))
     for o in pieces:
         smooth(o, 1)
@@ -624,23 +648,24 @@ arm(-1)
 arm(1)
 
 # ================================================================ LEGS
-pelvis = loft('pelvis', [hring(y, w, d, 0) for y, w, d in
-                         ((592, 78, 52), (606, 79, 50), (620, 77, 42), (634, 68, 35), (646, 50, 30))],
-              ['pants'], caps=(P(CX, 586, 0), P(CX, 650, 0)))
-smooth(pelvis)
-legs = [pelvis]
-LEG = [(46, 630, 33), (46, 700, 31), (50, 760, 30), (53, 810, 29), (54, 829, 28)]
+# Each leg of the trousers runs from the waist (half of the hips) to the ankle, so there is no
+# hip-to-leg junction to show; the two halves fuse down the middle above the crotch.
+LEGS = [(588, 38, 41, 50, 2.6), (606, 40, 40, 48, 2.6), (620, 44, 34, 38, 2.3), (634, 46, 31, 33, 2.1),
+        (700, 46, 29.5, 28, 2), (760, 50, 28.5, 27, 2), (810, 53, 27.5, 26, 2), (829, 54, 27, 25.6, 2)]
+legs = []
 for side in (-1, 1):
-    leg = loft('leg', [hring(y, r, r * (1.06 if y < 650 else 0.95), 0, x=CX + side * o, n=20) for o, y, r in LEG], ['pants'],
-               caps=(P(CX + side * 46, 624, 0), P(CX + side * 54, 832, 0)))
+    leg = loft('leg', [hring(y, w, d, 0, x=CX + side * o, n=24, e=e) for y, o, w, d, e in LEGS], ['pants'],
+               caps=(P(CX + side * 38, 584, 0), P(CX + side * 54, 832, 0)))
     smooth(leg)
     legs.append(leg)
+pelvis = legs[0]
 # one pants surface, rounded where the legs meet the hips so no crease line shows
 bpy.ops.object.select_all(action='DESELECT')
 for o in legs:
     o.select_set(True)
 bpy.context.view_layer.objects.active = pelvis
 bpy.ops.object.join()
+pelvis = bpy.context.view_layer.objects.active
 rm = pelvis.modifiers.new('fuse', 'REMESH')
 rm.mode = 'VOXEL'
 rm.voxel_size = 1.5 * S
@@ -682,6 +707,104 @@ shoe(1)
 
 # ground shadow (not part of the character)
 sh = ellipsoid('shadow', (CX + 3, 866, -10), (163, 0.5, 150), ['shadow'])
+
+# ================================================================ RIG
+# Bones in drawing px (head, tail), roll toward the viewer. ".L" is the character's left (+X).
+BONES = {
+    'root': (None, (CX, FLOOR, 0), (CX, FLOOR, 60)),
+    'hips': ('root', (CX, 604, 4), (CX, 545, 4)),
+    'spine': ('hips', (CX, 545, 4), (CX, 470, 2)),
+    'chest': ('spine', (CX, 470, 2), (CX, 380, 4)),
+    'neck': ('chest', (CX, 380, 4), (CX, 338, 2)),
+    'head': ('neck', (CX, 338, 2), (CX, 172, 2)),
+}
+for side, sx in (('L', 1), ('R', -1)):
+    X = lambda o: CX + sx * o
+    BONES.update({
+        f'shoulder.{side}': ('chest', (X(14), 372, 0), (X(80), 392, 2)),
+        f'upper_arm.{side}': (f'shoulder.{side}', (X(80), 392, 2), (X(123), 488, 6)),
+        f'forearm.{side}': (f'upper_arm.{side}', (X(123), 488, 6), (X(125), 592, 2)),
+        f'hand.{side}': (f'forearm.{side}', (X(125), 592, 2), (X(126), 652, -4)),
+        f'thigh.{side}': ('hips', (X(42), 612, 0), (X(48), 724, -3)),
+        f'shin.{side}': (f'thigh.{side}', (X(48), 724, -3), (X(54), 832, 4)),
+        f'foot.{side}': (f'shin.{side}', (X(54), 832, 4), (X(100), 856, -34)),
+    })
+# animation controls (not exported as deforming bones)
+CONTROLS = {}
+for side, sx in (('L', 1), ('R', -1)):
+    X = lambda o: CX + sx * o
+    CONTROLS.update({
+        f'foot_ik.{side}': ('root', (X(54), 832, 4), (X(54), 832, 50)),
+        f'knee_pole.{side}': ('root', (X(48), 724, -160), (X(48), 724, -200)),
+        f'hand_ik.{side}': ('root', (X(125), 592, 2), (X(125), 592, 40)),
+        f'elbow_pole.{side}': ('root', (X(123), 488, 140), (X(123), 488, 180)),
+    })
+
+
+def build_rig():
+    arm = bpy.data.armatures.new('doodle_rig')
+    arm.display_type = 'STICK'
+    rig = bpy.data.objects.new('doodle_rig', arm)
+    COL.objects.link(rig)
+    bpy.context.view_layer.objects.active = rig
+    bpy.ops.object.mode_set(mode='EDIT')
+    eb = arm.edit_bones
+    for name, (parent, h, t) in list(BONES.items()) + list(CONTROLS.items()):
+        b = eb.new(name)
+        b.head, b.tail = P(*h), P(*t)
+        b.use_deform = name in BONES and name != 'root'
+        if parent:
+            b.parent = eb[parent]
+            b.use_connect = name in BONES and (eb[parent].tail - b.head).length < 1e-6
+    # roll so every bone's Z points toward the viewer (-Y): predictable local axes for animation
+    for b in eb:
+        if abs((b.tail - b.head).normalized().y) < 0.9:
+            b.align_roll(Vector((0, -1, 0)))
+    bpy.ops.object.mode_set(mode='POSE')
+    pb = rig.pose.bones
+    for side in ('L', 'R'):
+        # legs: IK to the foot control with the knee aimed by its pole (feet stay planted)
+        ik = pb[f'shin.{side}'].constraints.new('IK')
+        ik.target, ik.subtarget = rig, f'foot_ik.{side}'
+        ik.pole_target, ik.pole_subtarget = rig, f'knee_pole.{side}'
+        ik.pole_angle = radians(90)  # found by search: keeps the rest pose exactly
+        ik.chain_count = 2
+        # arms: FK by default; the IK is there to switch on (influence) for pushes and grabs
+        ik = pb[f'forearm.{side}'].constraints.new('IK')
+        ik.target, ik.subtarget = rig, f'hand_ik.{side}'
+        ik.pole_target, ik.pole_subtarget = rig, f'elbow_pole.{side}'
+        ik.pole_angle = radians(-99 if side == 'L' else -81)
+        ik.chain_count = 2
+        ik.influence = 0.0
+    bpy.ops.object.mode_set(mode='OBJECT')
+    return rig
+
+
+def seg_dist(p, a, b):
+    ab = b - a
+    t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+    return (p - (a + ab * t)).length
+
+
+def skin(rig):
+    """Weights by distance to the bones each part may bend with (smooth blends at the joints)."""
+    heads = {n: (P(*h), P(*t)) for n, (_, h, t) in BONES.items()}
+    for name, (ob, bones, line) in PARTS.items():
+        groups = {b: ob.vertex_groups.new(name=b) for b in bones}
+        for v in ob.data.vertices:
+            if len(bones) == 1:
+                groups[bones[0]].add([v.index], 1.0, 'REPLACE')
+                continue
+            d = {b: max(seg_dist(v.co, *heads[b]), 1e-5) for b in bones}
+            w = {b: (1 / x) ** 8 for b, x in d.items()}
+            tot = sum(w.values())
+            for b, x in w.items():
+                if x / tot > 0.01:
+                    groups[b].add([v.index], x / tot, 'REPLACE')
+        mod = ob.modifiers.new('rig', 'ARMATURE')
+        mod.object = rig
+        ob.parent = rig
+
 
 # ================================================================ OUTLINES
 OUTLINE = outline_mat()
@@ -751,12 +874,24 @@ def camera(name, yaw=0.0, pitch=-6.0, res=(776, 1024), centre=(388, 512), scale_
     bpy.ops.render.render(write_still=True)
 
 
+def export_glb(path):
+    """Skinned GLB for three.js: deforming bones only, flat colours as unlit materials."""
+    for ob in SC.objects:
+        ob.select_set(ob.name in PARTS or ob.name == 'doodle_rig')
+    bpy.ops.export_scene.gltf(filepath=path, export_format='GLB', use_selection=True, export_skins=True,
+                              export_def_bones=True, export_animations=False, export_apply=False,
+                              export_yup=True)
+
+
 if __name__ == '__main__':
+    RIG = build_rig()
+    skin(RIG)
     finish_outlines()
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'doodle.blend'))
+    if '--glb' in sys.argv:
+        export_glb(os.path.join(OUT, 'doodle.glb'))
     if '--render' in sys.argv:
         camera('front')
-        if '--all' in sys.argv:
-            camera('three_quarter', yaw=-35, centre=(388, 512))
-            camera('side', yaw=-90)
-            camera('back', yaw=180)
+        camera('three_quarter', yaw=-35)
+        camera('side', yaw=-90)
+        camera('back', yaw=180)

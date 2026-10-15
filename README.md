@@ -43,7 +43,7 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
   with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
 - **Doodle:** traced from the reference drawing by `scripts/doodle-trace/` into `public/doodle.svg`
   and shown still in the hero (`HeroDoodle.tsx`). His animation will come from the rigged 3D model
-  built in Blender by `scripts/doodle-3d/build_model.py`.
+  built in Blender by `scripts/doodle-3d/build_model.py` (`doodle.blend` and previews alongside).
 - **Smooth scroll:** Lenis on fine-pointer devices only.
 - **Page transitions:** View Transitions API via `next-view-transitions`; project covers morph
   into the case-study hero.
