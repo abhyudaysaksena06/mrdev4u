@@ -7,9 +7,12 @@
 # <out_dir>/doodle.glb (skinned, for three.js) with --glb. The committed doodle.blend next to this
 # script is its output; preview/ has the turnaround and a rig test.
 #
-# Rig: root > hips > spine > chest > neck > head, shoulder > upper_arm > forearm > hand and
-# thigh > shin > foot per side. Legs are IK (foot_ik, knee_pole controls); arms are FK with an IK
-# (hand_ik, elbow_pole) ready to switch on through the constraint's influence.
+# Rig (60 bones, at the anatomical joint centres): root > hips > spine > chest > neck > head;
+# per side shoulder > upper_arm > forearm (+ forearm_twist) > hand > three bones per finger and
+# thumb; thigh > shin > foot. Joints have human ranges (elbows and knees hinge one way only, finger
+# joints curl, the wrist's turn is shared with the forearm so it never wrings). Legs are IK
+# (foot_ik, knee_pole; planted feet stay flat); arms are FK with an IK (hand_ik, elbow_pole) to
+# switch on for pushes and grabs. posing.py has helpers to pose and render it.
 #
 # Everything is measured in pixels of the reference drawing (x right, y down, d = depth, negative
 # toward the viewer) and converted to metres by P(): the figure stands 1.75 m tall on the origin,
@@ -21,6 +24,8 @@
 import bpy, bmesh, math, sys, os
 import numpy as np
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import trace as tr
+from scipy import ndimage as ndi
 from math import sin, cos, pi, radians, asin, atan2, sqrt
 from mathutils import Vector, Matrix
 from mathutils.bvhtree import BVHTree
@@ -253,6 +258,24 @@ def paint(ob, fn):
             p.material_index = names.index(k)
 
 
+CLS = None
+
+
+def paint_drawing(ob, allowed, where=lambda x, y: True, facing=0.5):
+    """Faces that look at the viewer take the drawing's own colour at that spot, if it is one of
+    `allowed` (e.g. the soft shade under the chin); the rest keep their colour."""
+    global CLS
+    if CLS is None:
+        CLS = tr.colour_class(tr.rgb())
+
+    def fn(p, f):
+        if f.normal.y > -facing or not where(p[0], p[1]):
+            return None
+        c = CLS[int(round(p[1])), int(round(p[0]))]
+        return c if c in allowed else None
+    paint(ob, fn)
+
+
 def tube_angle(ob, ref):
     """Angle function for faces of a tube: degrees around the path from its side vector."""
     F = frames([tuple(p) for p in ob['path']], ref)
@@ -398,8 +421,9 @@ def seam(name, y, hw, hd, bones, x=CX, dc=0.0, gap=None, w=2.0):
 # ================================================================ HEAD
 # Face rings: (y, half width, half depth, centre depth), measured inside the drawn outline.
 HEAD = [(184, 30, 40, 6), (192, 42, 52, 5), (205, 49, 58, 3), (225, 51, 60, 1), (270, 51, 60, 0),
-        (292, 49, 57, -1), (304, 46, 53, -2), (316, 41, 47, -4), (326, 34, 40, -7), (334, 25, 31, -9),
-        (339, 14, 20, -11)]
+        (292, 48.5, 57, -1), (302, 47, 55, -2), (306, 45, 53, -2.5), (310, 43, 51, -3), (314, 41, 49, -4),
+        (318, 39.5, 47, -5), (322, 36.5, 44, -6), (326, 33, 41, -7), (332, 27.5, 36, -9), (337, 21, 30, -10),
+        (340, 15, 24, -11)]
 head = loft('head', [hring(y, w, d, c, e=2.2) for y, w, d, c in HEAD], ['skin'],
             caps=(P(CX, 178, 6), P(CX, 342, -12)))
 smooth(head)
@@ -413,9 +437,6 @@ for side in (-1, 1):
 
 # Hair: the front is the drawing's own hair shape (traced), bulged into a dome over the head; curls
 # behind give the back of the head its volume. Fused into one surface by a voxel remesh.
-import trace as tr
-from scipy import ndimage as ndi
-
 HAIR_BACK = [
     # (x, y, d, half width, half height, half depth), all hidden behind the face from the front
     (386, 214, 18, 54, 42, 58), (386, 252, 38, 50, 32, 38), (386, 280, 44, 44, 22, 26),
@@ -495,39 +516,69 @@ def tree_of(objs):
 
 
 def hair_front():
-    """The drawing's hair: its outline exactly the drawing's, its volume a rounded envelope round
-    the skull, always just in front of the face where the fringe covers it."""
+    """The drawing's hair. Seen from the front its outline is exactly the drawing's (a solid cut to
+    the drawing's hair shape, bulging into a dome over the forehead); all round the head it is a
+    cap of curls, placed so that none of them shows past that outline from the front. The two are
+    fused into one surface."""
     head_t = tree_of([head])
+    mask = tr.hair_mask()
 
     def depths(x, y):
         k = max(0.12, 1 - ((x - 386) / 90) ** 2 - ((y - 228) / 76) ** 2)
         f = 6 - 74 * sqrt(k)
-        b = 6 + 72 * sqrt(k)
         h = head_t.ray_cast(P(x, y, -400), Vector((0, 1, 0)))
         if h[0] is not None:
             f = min(f, h[0].y / S - 3)
-        return f, b
-    return slab('hair', tr.hair_mask(), depths, 'hair')
+        return f, f + 34
+    front = slab('hair', mask, depths, 'hair', smooth_iters=4)
+
+    # under the curls, a scalp layer so the skull never shows between them (it sits inside the
+    # front outline, or behind the face)
+    pieces = [front, ellipsoid('scalp', (386, 238, 14), (54, 64, 62), ['hair'], n=32)]
+    # the cap of curls: spread over a shell round the skull, each kept inside the front outline or
+    # hidden behind the head, so the front view stays exactly the drawing's
+    inside = ndi.binary_erosion(mask, tr.disk(2))
+    golden = pi * (3 - sqrt(5))
+    for i in range(520):
+        z = 1 - 2 * (i + 0.5) / 520
+        r_ = sqrt(1 - z * z)
+        a_ = golden * i
+        ux, uy, uz = r_ * cos(a_), z, r_ * sin(a_)     # uy up, uz back
+        x, y, d = 386 + 62 * ux, 236 - 64 * uy, 12 + 66 * uz
+        if y > 302 or (y > 258 and uz < 0.25) or uz < -0.4:
+            continue
+        for rad in (16 + 4 * max(0, uz), 12, 9):
+            xs = np.arange(int(x - rad), int(x + rad) + 1)
+            ys = np.arange(int(y - rad), int(y + rad) + 1)
+            gx, gy = np.meshgrid(xs, ys)
+            disc = (gx - x) ** 2 + (gy - y) ** 2 <= rad * rad
+            gx, gy = gx[disc], gy[disc]
+            in_mask = inside[gy, gx].all()
+            behind_head = uz > 0.25 and abs(x - 386) + rad < 50 and y - rad > 185 and y + rad < 335
+            if in_mask or behind_head:
+                pieces.append(ellipsoid('curl', (x, y, d), (rad, rad, rad), ['hair'], n=12))
+                break
+    bpy.ops.object.select_all(action='DESELECT')
+    for o in pieces:
+        o.select_set(True)
+    bpy.context.view_layer.objects.active = front
+    bpy.ops.object.join()
+    ob = bpy.context.view_layer.objects.active
+    rm = ob.modifiers.new('fuse', 'REMESH')
+    rm.mode = 'VOXEL'
+    rm.voxel_size = 1.2 * S
+    sm = ob.modifiers.new('soften', 'SMOOTH')
+    sm.factor, sm.iterations = 1.0, 6
+    dc = ob.modifiers.new('lighter', 'DECIMATE')
+    dc.ratio = 0.3
+    apply_mods(ob)
+    ob.name = 'hair'
+    for p in ob.data.polygons:
+        p.use_smooth = True
+    return ob
 
 
 hair = hair_front()
-curls = []
-for h in HAIR_BACK:
-    x, y, d = h[:3]
-    r = h[3:] if len(h) == 6 else (h[3], h[3], h[3])
-    c = ellipsoid('curl', (x, y, d), r, ['hair'], n=20)
-    smooth(c, 1)
-    curls.append(c)
-bpy.ops.object.select_all(action='DESELECT')
-for c in curls:
-    c.select_set(True)
-hair.select_set(True)
-bpy.context.view_layer.objects.active = hair
-bpy.ops.object.join()
-hair = bpy.context.view_layer.objects.active
-hair.name = 'hair'
-for p in hair.data.polygons:
-    p.use_smooth = True
 part(hair, ['head'])
 
 face_t = [head]
@@ -555,7 +606,7 @@ part(glasses, ['head'], 0)
 # ================================================================ NECK, TEE, HOODIE
 neck = loft('neck', [hring(y, 22, 20, 3) for y in (322, 340, 360, 382)], ['skin'], caps=(None, None))
 smooth(neck)
-paint(neck, lambda p, f: 'shade' if p[1] < 350 else None)
+
 part(neck, ['neck', 'head', 'chest'])
 
 TEE = [(364, 27, 24, 4), (380, 46, 34, 3), (396, 66, 46, 2), (420, 76, 50, 0), (520, 76, 50, 0), (588, 75, 50, 0)]
@@ -676,6 +727,16 @@ ARM = {
 CUFF_X = {'R': 260, 'L': 515.5}
 
 
+# Anatomical joint centres per side (drawing px: x, y, depth): the clavicle's inner end, the
+# shoulder (ball of the humerus, inside the deltoid), the elbow and the wrist. Upper arm to forearm
+# runs about 1.2 : 1, as on a real arm.
+ARM_J = {
+    'R': {'clav': (CX - 14, 372, 0), 'shoulder': (300, 390, 2), 'elbow': (266, 500, 5), 'wrist': (260, 596, 2)},
+    'L': {'clav': (CX + 14, 372, 0), 'shoulder': (472, 390, 2), 'elbow': (509, 500, 5), 'wrist': (515.5, 596, 2)},
+}
+HAND_BONES = {}  # name -> (parent, head px, tail px, z axis hint in world space), filled by hand()
+
+
 def arm(side):
     nm = 'L' if side > 0 else 'R'
     pts = [(x, y, d) for x, y, d, r in ARM[nm]]
@@ -690,45 +751,140 @@ def arm(side):
         front = -g if side < 0 else g
         return 'lime' if (s_ > 1.35 and -8 < front < 34) else None
     paint(sl, stripe)
-    part(sl, [f'shoulder.{nm}', f'upper_arm.{nm}', f'forearm.{nm}', 'chest'])
+    part(sl, [f'shoulder.{nm}', f'upper_arm.{nm}', f'forearm.{nm}', f'forearm_twist.{nm}', 'chest'])
 
     cx = CUFF_X[nm]
     cuff = loft(f'cuff.{nm}', [hring(y, r, r, 2, x=cx) for y, r in ((574, 17), (586, 16.5), (595, 16))], ['hoodie'],
                 caps=(None, P(cx, 597, 2)))
     smooth(cuff)
-    part(cuff, [f'forearm.{nm}'])
-    seam(f'cuff_top.{nm}', 576, 18.5, 18.5, [f'forearm.{nm}'], x=cx, dc=2, w=3.2)
+    part(cuff, [f'forearm.{nm}', f'forearm_twist.{nm}'])
+    seam(f'cuff_top.{nm}', 576, 18.5, 18.5, [f'forearm.{nm}', f'forearm_twist.{nm}'], x=cx, dc=2, w=3.2)
 
-    hand(side, nm, cx)
+    hand(side, nm)
 
 
-def hand(side, nm, cx, turn=18):
-    """Relaxed hand hanging from the wrist, back of the hand to the front, thumb on the inner side.
+def wdir(v):
+    """A direction in drawing px space (x, y down, depth) as a Blender vector."""
+    return Vector((v.x, v.z, -v.y)).normalized()
 
-    Built in hand space (px): X across the knuckles from little finger to index, Y out of the back
-    of the hand, Z up the arm; the wrist is the origin. turn swings it toward the leg.
-    """
+
+def rot(v, axis, deg):
+    """Rotate v about a unit axis (Rodrigues)."""
+    a = radians(deg)
+    return (v * cos(a) + axis.cross(v) * sin(a) + axis * axis.dot(v) * (1 - cos(a))).normalized()
+
+
+def weigh(ob, bones):
+    """Vertex weights by distance to a short chain of bones (px head/tail), blended at the joints."""
+    segs = {b: (P(*h), P(*t)) for b, (h, t) in bones.items()}
+    groups = {b: ob.vertex_groups.new(name=b) for b in bones}
+    for v in ob.data.vertices:
+        d = {b: max(seg_dist(v.co, *ab), 1e-6) for b, ab in segs.items()}
+        w = {b: (1 / x) ** 10 for b, x in d.items()}
+        tot = sum(w.values())
+        for b, x in w.items():
+            if x / tot > 0.01:
+                groups[b].add([v.index], x / tot, 'REPLACE')
+
+
+def seg_dist(p, a, b):
+    ab = b - a
+    t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
+    return (p - (a + ab * t)).length
+
+
+def hand(side, nm, turn=55):
+    """An anatomical hand, relaxed at the side: a palm with the knuckle arch, four fingers of three
+    segments each and an opposable thumb, sized to the drawing's hand (wrist to fingertip about 10%
+    of his height, as on a real person). Every finger has its own bones, so the hand can grip, point,
+    wave or spread like a real one.
+
+    Hand space (px): R toward the thumb, D out of the back of the hand, F toward the fingertips.
+    Hanging, the palm faces the thigh, turned `turn` degrees toward the front (as drawn)."""
     th = radians(turn)
-    X = Vector((-side * cos(th), -sin(th), 0))   # (px x, depth) directions
-    Y = Vector((side * sin(th), -cos(th), 0))
-    wrist = Vector((cx, 2, 0))  # (px x, depth)
+    Lat = Vector((side, 0, 0))   # away from the body
+    Fr = Vector((0, 0, -1))      # toward the viewer
+    F = Vector((0, 1, 0))        # down the arm
+    D = Lat * cos(th) + Fr * sin(th)
+    R = Fr * cos(th) - Lat * sin(th)
+    W = Vector(ARM_J[nm]['wrist'])
 
-    def H(x, y, z):
-        w = wrist + X * x + Y * y
-        return (w.x, 596 - z, w.y)
-    Xw = Vector((X.x, X.y, 0))  # the same direction in Blender space (px depth is world y)
-    pieces = [tube('palm', [H(0, 0, 4), H(0, 0, -6), H(0, -1, -20), H(0, -2, -30)],
-                   [(17, 8), (21, 9), (22, 9.5), (21.5, 9)], ['skin'], ref=Xw, n=16, e=2.6, caps=(0.5, 0.4))]
-    # little finger to index: knuckle x, length, spread
-    for fx, fl, sp, fd in ((-17.5, 26, -3, 1.5), (-6, 32, -1, 0.5), (6, 33, 1, -0.5), (17.5, 29, 3, -1.5)):
-        k = H(fx, -2 + fd, -28)
-        mid = H(fx + sp * 0.5, -3 + fd, -28 - fl * 0.55)
-        tip = H(fx + sp, -8 + fd, -28 - fl)
-        pieces.append(tube('finger', [k, mid, tip], [4.6, 4.3, 3.9], ['skin'], ref=Xw, n=12, caps=(0.5, 0.95)))
-    pieces.append(tube('thumb', [H(19, -6, -8), H(26, -12, -22), H(28, -15, -36)], [6.2, 5.4, 4.8], ['skin'],
-                       ref=Xw, n=12, caps=(0.5, 0.95)))
-    for o in pieces:
-        smooth(o, 1)
+    def H(r, d, f):
+        return W + R * r + D * d + F * f
+    t3 = lambda v: (v.x, v.y, v.z)
+    Rw, Dw = wdir(R), wdir(D)
+    hb = f'hand.{nm}'
+    mcp_mid = H(3.7, 0, 33)
+    HAND_BONES[hb] = (f'forearm.{nm}', t3(W), t3(mcp_mid), wdir(-D))
+    pieces = []
+
+    # palm: a rounded slab, wider and thinner toward the knuckles
+    rings = []
+    for f, hw, ht in ((-3, 11, 6.5), (5, 13, 7), (15, 15, 6.8), (25, 15.5, 6.2), (31, 15, 5.6)):
+        rings.append(ring(P(*t3(H(0.5, -0.3, f))), Rw, Dw, hw * S, ht * S, 20, 3.0))
+    palm = loft('palm', rings, ['skin'], caps=(P(*t3(H(0.5, 0, -6))), P(*t3(H(0.5, -0.5, 35)))))
+    smooth(palm, 1)
+    weigh(palm, {hb: (t3(W), t3(mcp_mid))})
+    pieces.append(palm)
+
+    # the curl bends a finger toward the palm (-D) about the thumb-side axis
+    sgn = 1 if rot(F, R, 10).dot(D) < 0 else -1
+    ssp = 1 if rot(F, D, 10).dot(R) > 0 else -1  # + spread fans toward the thumb
+    FINGERS = [  # name, knuckle r, knuckle f, segment lengths, base radius, spread, curl at the 3 joints
+        ('index', 11.2, 31, (16, 10.5, 8.5), 3.55, 5, (10, 20, 12)),
+        ('middle', 3.7, 33, (17.5, 11.5, 9), 3.65, 1, (12, 22, 13)),
+        ('ring', -3.7, 32, (16.5, 11, 8.5), 3.5, -3, (14, 24, 14)),
+        ('pinky', -11, 29, (13, 8.5, 7.5), 3.1, -8, (16, 26, 16)),
+    ]
+    for name, r0, f0, lens, rad, spread, curl in FINGERS:
+        mcp = H(r0, -0.6, f0)
+        d = rot(F, D, ssp * spread)
+        joints = [mcp]
+        dirs = []
+        for k in range(3):
+            d = rot(d, R, sgn * curl[k])
+            dirs.append(d)
+            joints.append(joints[-1] + d * lens[k])
+        path = [mcp - dirs[0] * 7, mcp]
+        radii = [rad + 0.4, rad + 0.25]
+        for k in range(3):
+            path += [joints[k] + dirs[k] * lens[k] * 0.5, joints[k + 1]]
+            radii += [rad * (0.97 - 0.05 * k), rad * (0.93 - 0.07 * k)]
+        path[-1] = joints[3] - dirs[2] * 1.5
+        ft = tube('finger', [t3(p) for p in path], radii, ['skin'], ref=wdir(R), n=12, caps=(0.5, 1.0))
+        smooth(ft, 1)
+        bones = {hb: (t3(W), t3(mcp_mid))}
+        parent = hb
+        for k in range(3):
+            bn = f'f_{name}.{k + 1:02d}.{nm}'
+            HAND_BONES[bn] = (parent, t3(joints[k]), t3(joints[k + 1]), wdir(-D))
+            bones[bn] = (t3(joints[k]), t3(joints[k + 1]))
+            parent = bn
+        weigh(ft, bones)
+        pieces.append(ft)
+
+    # thumb: from its base by the wrist, lying alongside the index, turned toward the palm
+    cmc = H(9, -3.5, 5)
+    d0 = (F * 1.0 + R * 0.62 - D * 0.45).normalized()
+    d1 = (d0 + F * 0.25 - R * 0.12).normalized()
+    d2 = (d1 + F * 0.2 - R * 0.15).normalized()
+    j = [cmc, cmc + d0 * 15, None, None]
+    j[2] = j[1] + d1 * 11
+    j[3] = j[2] + d2 * 9
+    path = [cmc - d0 * 3, cmc, (cmc + j[1]) / 2, j[1], (j[1] + j[2]) / 2, j[2], (j[2] + j[3]) / 2, j[3] - d2 * 1.5]
+    radii = [5.8, 6.0, 5.6, 4.5, 4.3, 4.1, 3.9, 3.6]
+    tb = tube('thumb', [t3(p) for p in path], radii, ['skin'], ref=wdir(-D), n=12, caps=(0.5, 1.0))
+    smooth(tb, 1)
+    bones = {hb: (t3(W), t3(mcp_mid))}
+    parent = hb
+    for k in range(3):
+        bn = f'f_thumb.{k + 1:02d}.{nm}'
+        HAND_BONES[bn] = (parent, t3(j[k]), t3(j[k + 1]), wdir(-D))
+        bones[bn] = (t3(j[k]), t3(j[k + 1]))
+        parent = bn
+    weigh(tb, bones)
+    pieces.append(tb)
+
     bpy.ops.object.select_all(action='DESELECT')
     for o in pieces:
         o.select_set(True)
@@ -736,7 +892,7 @@ def hand(side, nm, cx, turn=18):
     bpy.ops.object.join()
     h = bpy.context.view_layer.objects.active
     h.name = f'hand.{nm}'
-    part(h, [f'hand.{nm}'])
+    part(h, None)  # weighted above, finger by finger
 
 
 arm(-1)
@@ -767,15 +923,6 @@ def hood_front():
         f = front[min(max(int(round(y)) - y0, 0), y1 - y0 - 1), min(max(int(round(x)) - x0, 0), x1 - x0 - 1)]
         return f, f + 14
     ob = slab('hood_front', mask, depths, 'hoodie', smooth_iters=6)
-    cls = tr.colour_class(tr.rgb())
-
-    def colour(p, f):
-        if f.normal.y > -0.6:  # only what faces the viewer takes the drawing's colours
-            return None
-        x, y = int(round(p[0])), int(round(p[1]))
-        c = cls[y, x]
-        return {'lime': 'lime', 'navy': 'navy'}.get(c)
-    paint(ob, colour)
     part(ob, ['chest', 'neck'])
 
 
@@ -843,7 +990,10 @@ shoe(1)
 sh = ellipsoid('shadow', (CX + 3, 866, -10), (163, 0.5, 150), ['shadow'])
 
 # ================================================================ RIG
-# Bones in drawing px (head, tail), roll toward the viewer. ".L" is the character's left (+X).
+# A human skeleton placed at the anatomical joint centres inside the mesh (drawing px: head, tail).
+# Every bone's local axes are set so the joints bend like a person's: Y runs along the bone and
+# X is the hinge axis, so elbows, knees, wrists and finger joints all flex about X (positive bends
+# them the natural way). ".L" is the character's left (+X).
 BONES = {
     'root': (None, (CX, FLOOR, 0), (CX, FLOOR, 60)),
     'hips': ('root', (CX, 604, 4), (CX, 545, 4)),
@@ -854,30 +1004,55 @@ BONES = {
 }
 for side, sx in (('L', 1), ('R', -1)):
     X = lambda o: CX + sx * o
+    J = ARM_J[side]
+    ew = Vector(J['elbow']).lerp(Vector(J['wrist']), 0.5)
     BONES.update({
-        f'shoulder.{side}': ('chest', (X(14), 372, 0), (X(80), 392, 2)),
-        f'upper_arm.{side}': (f'shoulder.{side}', (X(80), 392, 2), (X(123), 488, 6)),
-        f'forearm.{side}': (f'upper_arm.{side}', (X(123), 488, 6), (X(125), 592, 2)),
-        f'hand.{side}': (f'forearm.{side}', (X(125), 592, 2), (X(126), 652, -4)),
-        f'thigh.{side}': ('hips', (X(42), 612, 0), (X(48), 724, -3)),
-        f'shin.{side}': (f'thigh.{side}', (X(48), 724, -3), (X(54), 832, 4)),
-        f'foot.{side}': (f'shin.{side}', (X(54), 832, 4), (X(100), 856, -34)),
+        f'shoulder.{side}': ('chest', J['clav'], J['shoulder']),
+        f'upper_arm.{side}': (f'shoulder.{side}', J['shoulder'], J['elbow']),
+        f'forearm.{side}': (f'upper_arm.{side}', J['elbow'], J['wrist']),
+        # the lower half of the forearm turns with the hand (pronation), so the wrist never wrings
+        f'forearm_twist.{side}': (f'forearm.{side}', tuple(ew), J['wrist']),
+        f'thigh.{side}': ('hips', (X(44), 614, 0), (X(47), 726, -3)),
+        f'shin.{side}': (f'thigh.{side}', (X(47), 726, -3), (X(53), 832, 3)),
+        f'foot.{side}': (f'shin.{side}', (X(53), 832, 3), (X(53 + 30), 856, 3 - 30)),
     })
-# animation controls (not exported as deforming bones)
+for n, (parent, h, t, z) in HAND_BONES.items():
+    BONES[n] = (parent, h, t)
+# animation controls (not deforming)
 CONTROLS = {}
 for side, sx in (('L', 1), ('R', -1)):
     X = lambda o: CX + sx * o
+    J = ARM_J[side]
     CONTROLS.update({
-        f'foot_ik.{side}': ('root', (X(54), 832, 4), (X(54), 832, 50)),
-        f'knee_pole.{side}': ('root', (X(48), 724, -160), (X(48), 724, -200)),
-        f'hand_ik.{side}': ('root', (X(125), 592, 2), (X(125), 592, 40)),
-        f'elbow_pole.{side}': ('root', (X(123), 488, 140), (X(123), 488, 180)),
+        # same rest as the foot, so the foot can copy it exactly (stays flat on the floor)
+        f'foot_ik.{side}': ('root', (X(53), 832, 3), (X(53 + 30), 856, 3 - 30)),
+        f'knee_pole.{side}': ('root', (X(47), 726, -160), (X(47), 726, -200)),
+        f'hand_ik.{side}': ('root', J['wrist'], HAND_BONES[f'hand.{side}'][2]),
+        f'elbow_pole.{side}': ('root', (J['elbow'][0], J['elbow'][1], 140), (J['elbow'][0], J['elbow'][1], 180)),
     })
+
+# Joint ranges (degrees, local X/Y/Z): how far a person's joints actually go.
+LIMITS = {
+    'forearm': ((0, 150), (0, 0), (-4, 4)),          # elbow: a hinge, no hyperextension
+    'forearm_twist': (None, None, None),
+    'hand': ((-70, 80), (-85, 85), (-25, 35)),       # wrist: flex/extend, pronate/supinate, tilt
+    'shin': ((-150, 0), (0, 0), (-3, 3)),            # knee: a hinge that bends back
+    'foot': ((-45, 30), (-20, 20), (-25, 25)),
+    'neck': ((-40, 35), (-50, 50), (-30, 30)),
+    'head': ((-35, 30), (-45, 45), (-25, 25)),
+    'f_thumb.01': ((-25, 50), (-30, 30), (-35, 35)),
+    'f_thumb.02': ((-10, 60), (0, 0), (-5, 5)),
+    'f_thumb.03': ((-15, 85), (0, 0), (0, 0)),
+}
+for f in ('index', 'middle', 'ring', 'pinky'):
+    LIMITS[f'f_{f}.01'] = ((-20, 90), (0, 0), (-18, 18))  # knuckle: curls and spreads
+    LIMITS[f'f_{f}.02'] = ((0, 105), (0, 0), (0, 0))      # finger joints: hinges
+    LIMITS[f'f_{f}.03'] = ((-5, 80), (0, 0), (0, 0))
 
 
 def build_rig():
     arm = bpy.data.armatures.new('doodle_rig')
-    arm.display_type = 'STICK'
+    arm.display_type = 'OCTAHEDRAL'
     rig = bpy.data.objects.new('doodle_rig', arm)
     COL.objects.link(rig)
     bpy.context.view_layer.objects.active = rig
@@ -890,53 +1065,121 @@ def build_rig():
         if parent:
             b.parent = eb[parent]
             b.use_connect = name in BONES and (eb[parent].tail - b.head).length < 1e-6
-    # roll so every bone's Z points toward the viewer (-Y): predictable local axes for animation
     for b in eb:
-        if abs((b.tail - b.head).normalized().y) < 0.9:
-            b.align_roll(Vector((0, -1, 0)))
+        if b.name in HAND_BONES:
+            b.align_roll(HAND_BONES[b.name][3])  # Z to the palm: + X rotation curls
+        elif b.name.startswith('hand_ik'):
+            b.align_roll(HAND_BONES[b.name.replace('hand_ik', 'hand')][3])
+        elif abs((b.tail - b.head).normalized().y) < 0.9:
+            b.align_roll(Vector((0, -1, 0)))     # Z forward: + X bends elbows forward
     bpy.ops.object.mode_set(mode='POSE')
     pb = rig.pose.bones
+    for b in pb:
+        b.rotation_mode = 'XYZ'
+        key = b.name.rsplit('.', 1)[0] if b.name.count('.') else b.name
+        lim = LIMITS.get(key)
+        if lim and any(lim):
+            c = b.constraints.new('LIMIT_ROTATION')
+            c.owner_space = 'LOCAL'
+            c.use_transform_limit = True
+            for ax, rng in zip('xyz', lim):
+                if rng is None:
+                    continue
+                setattr(c, f'use_limit_{ax}', True)
+                setattr(c, f'min_{ax}', radians(rng[0]))
+                setattr(c, f'max_{ax}', radians(rng[1]))
     for side in ('L', 'R'):
-        # legs: IK to the foot control with the knee aimed by its pole (feet stay planted)
+        # forearm twist follows the hand's turn about the forearm
+        c = pb[f'forearm_twist.{side}'].constraints.new('COPY_ROTATION')
+        c.target, c.subtarget = rig, f'hand.{side}'
+        c.use_x, c.use_y, c.use_z = False, True, False
+        c.target_space = c.owner_space = 'LOCAL'
+        # legs: IK to the foot control, knee aimed by its pole; knees only hinge
         ik = pb[f'shin.{side}'].constraints.new('IK')
         ik.target, ik.subtarget = rig, f'foot_ik.{side}'
         ik.pole_target, ik.pole_subtarget = rig, f'knee_pole.{side}'
-        ik.pole_angle = radians(90)  # found by search: keeps the rest pose exactly
+        ik.pole_angle = radians(POLE.get(f'shin.{side}', 90))
         ik.chain_count = 2
+        c = pb[f'foot.{side}'].constraints.new('COPY_ROTATION')  # planted feet stay flat
+        c.target, c.subtarget = rig, f'foot_ik.{side}'
+        sh = pb[f'shin.{side}']
+        sh.lock_ik_y = sh.lock_ik_z = True
+        sh.use_ik_limit_x = True
+        sh.ik_min_x, sh.ik_max_x = radians(-150), 0
         # arms: FK by default; the IK is there to switch on (influence) for pushes and grabs
         ik = pb[f'forearm.{side}'].constraints.new('IK')
         ik.target, ik.subtarget = rig, f'hand_ik.{side}'
         ik.pole_target, ik.pole_subtarget = rig, f'elbow_pole.{side}'
-        ik.pole_angle = radians(-99 if side == 'L' else -81)
+        ik.pole_angle = radians(POLE.get(f'forearm.{side}', -90))
         ik.chain_count = 2
         ik.influence = 0.0
+        c = pb[f'hand.{side}'].constraints.new('COPY_ROTATION')  # with the IK on, the hand follows its control
+        c.name = 'hand_ik'
+        c.target, c.subtarget = rig, f'hand_ik.{side}'
+        c.influence = 0.0
+        fa = pb[f'forearm.{side}']
+        fa.lock_ik_y = fa.lock_ik_z = True
+        fa.use_ik_limit_x = True
+        fa.ik_min_x, fa.ik_max_x = 0, radians(150)
     bpy.ops.object.mode_set(mode='OBJECT')
     return rig
 
 
-def seg_dist(p, a, b):
-    ab = b - a
-    t = max(0.0, min(1.0, (p - a).dot(ab) / ab.length_squared))
-    return (p - (a + ab * t)).length
+# IK pole angles that keep the rest pose exactly (found by search, see find_poles)
+POLE = {}
+
+
+def find_poles(rig):
+    """Pole angle per IK chain that leaves the rest pose untouched."""
+    pb = rig.pose.bones
+    for ikb, chain in (('shin', 'thigh'), ('forearm', 'upper_arm')):
+        for side in ('L', 'R'):
+            c = pb[f'{ikb}.{side}'].constraints['IK']
+            inf = c.influence
+            c.influence = 1.0
+            best = None
+            for a10 in range(-1800, 1800, 5):
+                c.pole_angle = radians(a10 / 10)
+                bpy.context.view_layer.update()
+                err = sum(sum(abs(x) for r in (pb[f'{b}.{side}'].matrix.to_3x3() - rig.data.bones[f'{b}.{side}'].matrix_local.to_3x3()) for x in r)
+                          for b in (chain, ikb))
+                if best is None or err < best[0]:
+                    best = (err, a10 / 10)
+            c.pole_angle = radians(best[1])
+            c.influence = inf
+            POLE[f'{ikb}.{side}'] = best[1]
+    bpy.context.view_layer.update()
 
 
 def skin(rig):
-    """Weights by distance to the bones each part may bend with (smooth blends at the joints)."""
-    heads = {n: (P(*h), P(*t)) for n, (_, h, t) in BONES.items()}
+    """Weights by distance to the bones each part may bend with (smooth blends at the joints); the
+    forearm's weight shades into its twist bone toward the wrist. Hands come pre-weighted."""
+    segs = {n: (P(*h), P(*t)) for n, (_, h, t) in BONES.items()}
     for name, (ob, bones, line) in PARTS.items():
-        groups = {b: ob.vertex_groups.new(name=b) for b in bones}
-        for v in ob.data.vertices:
-            if len(bones) == 1:
-                groups[bones[0]].add([v.index], 1.0, 'REPLACE')
-                continue
-            d = {b: max(seg_dist(v.co, *heads[b]), 1e-5) for b in bones}
-            w = {b: (1 / x) ** 8 for b, x in d.items()}
-            tot = sum(w.values())
-            for b, x in w.items():
-                if x / tot > 0.01:
-                    groups[b].add([v.index], x / tot, 'REPLACE')
+        if bones is not None:
+            groups = {b: ob.vertex_groups.new(name=b) for b in bones}
+            for v in ob.data.vertices:
+                if len(bones) == 1:
+                    groups[bones[0]].add([v.index], 1.0, 'REPLACE')
+                    continue
+                d = {b: max(seg_dist(v.co, *segs[b]), 1e-5) for b in bones if not b.startswith('forearm_twist')}
+                w = {b: (1 / x) ** 8 for b, x in d.items()}
+                tot = sum(w.values())
+                w = {b: x / tot for b, x in w.items()}
+                for side in ('L', 'R'):
+                    fa, tw = f'forearm.{side}', f'forearm_twist.{side}'
+                    if fa in w and tw in bones:
+                        a, b = segs[fa]
+                        t = max(0.0, min(1.0, (v.co - a).dot(b - a) / (b - a).length_squared))
+                        k = t * t * (3 - 2 * t)
+                        w[tw] = w[fa] * k
+                        w[fa] *= 1 - k
+                for b, x in w.items():
+                    if x > 0.01:
+                        groups[b].add([v.index], x, 'REPLACE')
         mod = ob.modifiers.new('rig', 'ARMATURE')
         mod.object = rig
+        mod.use_deform_preserve_volume = True  # no "candy wrapper" when a joint twists
         ob.parent = rig
 
 
@@ -1010,72 +1253,91 @@ def camera(name, yaw=0.0, pitch=0.0, res=(776, 1024), centre=(388, 512), scale_p
 
 def traced_lines():
     """Every ink line of the drawing that the model's outlines miss (face, strands, folds, seams),
-    traced from the drawing and laid onto the surface it falls on, so it moves with that part."""
+    taken from the drawing pixel for pixel and laid onto the surface it falls on, so it moves with
+    that part. Lines over the hands are left out: the hands are modelled as real hands, not as drawn."""
     tmp = os.path.join(OUT, '_pass1.png')
     camera('_pass1', pitch=0.0)
-    regions = tr.regions(tr.missing_lines(tmp))
+    miss = tr.missing_lines(tmp)
     os.remove(tmp)
-    from mathutils.geometry import tessellate_polygon
     targets = {}
     for name, (ob, bones, line) in PARTS.items():
         if line == 0 and name not in ('glasses',):
             continue
-        me = ob.data
-        out_i = [i for i, m in enumerate(me.materials) if m and m.name == 'outline']
-        polys = [p.vertices[:] for p in me.polygons if p.material_index not in out_i]
-        targets[name] = BVHTree.FromPolygons([v.co.copy() for v in me.vertices], polys)
+        targets[name] = tree_of([ob])
+    lab, n = ndi.label(miss)
     per = {}
-    for outer, holes in regions:
-        cx = sum(p[0] for p in outer) / len(outer)
-        cy = sum(p[1] for p in outer) / len(outer)
-        hit = None
-        for k, (x, y) in enumerate([(cx, cy)] + outer[::max(1, len(outer) // 12)]):
-            hs = [(n, t.ray_cast(P(x, y, -400), Vector((0, 1, 0)))) for n, t in targets.items()]
-            hs = [(n, h) for n, h in hs if h[0] is not None]
+    for i, sl in enumerate(ndi.find_objects(lab)):
+        ys, xs = np.nonzero(lab[sl] == i + 1)
+        ys, xs = ys + sl[0].start, xs + sl[1].start
+        votes = {}
+        for k in np.linspace(0, len(xs) - 1, min(len(xs), 9)).astype(int):
+            hs = [(nm_, t.ray_cast(P(xs[k], ys[k], -400), Vector((0, 1, 0)))) for nm_, t in targets.items()]
+            hs = [(nm_, h) for nm_, h in hs if h[0] is not None]
             if hs:
-                hit = min(hs, key=lambda nh: nh[1][3])[0]
-                break
-        if hit is None:
+                nm_ = min(hs, key=lambda nh: nh[1][3])[0]
+                votes[nm_] = votes.get(nm_, 0) + 1
+        if not votes:
             continue
-        per.setdefault(hit, []).append((outer, holes))
-    for name, regs in per.items():
-        tree = targets[name]
-        # lay the shapes out flat in drawing px, split them finely, then drop every point onto the
-        # surface (with only outline points the fill would cut chords through a curved surface)
-        bm = bmesh.new()
-        for outer, holes in regs:
-            loops = [outer] + holes
-            vs = [bm.verts.new((x, y, 0)) for loop in loops for x, y in loop]
-            for tri in tessellate_polygon([[Vector((x, y, 0)) for x, y in loop] for loop in loops]):
-                try:
-                    bm.faces.new([vs[i] for i in tri])
-                except ValueError:
-                    pass
-        for _ in range(8):
-            long_ = [e for e in bm.edges if e.calc_length() > 3.0]
-            if not long_:
-                break
-            bmesh.ops.subdivide_edges(bm, edges=long_, cuts=1, use_grid_fill=False)
-            bmesh.ops.triangulate(bm, faces=bm.faces[:])
-        last, facing = 0.0, {}
-        for v in bm.verts:
-            x, y = v.co.x, v.co.y
+        hit = max(votes, key=votes.get)
+        if hit.startswith('hand.'):
+            continue
+        per.setdefault(hit, np.zeros_like(miss))
+        per[hit] |= lab == i + 1
+    for name, m in per.items():
+        raster_decal(f'lines.{name}', m, targets[name], 'ink', 0.8, PARTS[name][1])
+
+    # the drawing's flat colour patches: shading under the chin, in the ears and below the collar,
+    # and the hood's lining and piping, each laid onto the part it falls on
+    global CLS
+    if CLS is None:
+        CLS = tr.colour_class(tr.rgb())
+    WHERE = {'shade': ('head', 'neck', 'ear.L', 'ear.R', 'tee'), 'navy': ('hood_front',), 'lime': ('hood_front', 'hood', 'sleeve.L', 'sleeve.R')}
+    for cls_, allowed in WHERE.items():
+        ys, xs = np.nonzero(CLS == cls_)
+        masks = {}
+        for x, y in zip(xs, ys):
+            hs = [(nm_, t.ray_cast(P(x, y, -400), Vector((0, 1, 0)))) for nm_, t in targets.items()]
+            hs = [(nm_, h) for nm_, h in hs if h[0] is not None]
+            if not hs:
+                continue
+            nm_ = min(hs, key=lambda nh: nh[1][3])[0]
+            if nm_ == 'head' and y < 290:  # (anti-aliasing at the fringe reads as shade: not shading)
+                continue
+            if nm_ in allowed:
+                masks.setdefault(nm_, np.zeros(CLS.shape, bool))[y, x] = True
+        for nm_, m in masks.items():
+            m = ndi.binary_opening(ndi.binary_closing(m, tr.disk(1)), tr.disk(1))
+            raster_decal(f'{cls_}.{nm_}', m, targets[nm_], cls_, 0.4, PARTS[nm_][1])
+
+
+def raster_decal(name, m, tree, mat, lift, bones, UP=2):
+    """A drawing-px mask as a fine grid of little quads laid onto a surface (dropped along the view
+    axis), `lift` px off it; leaves out what lies on faces seen edge-on (they would smear)."""
+    big = ndi.gaussian_filter(ndi.zoom(m.astype(float), UP, order=1), 0.7) > 0.45
+    ys, xs = np.nonzero(big)
+    if not len(xs):
+        return
+    idx, verts, faces, facing = {}, [], [], []
+
+    def vid(i, j):
+        if (i, j) not in idx:
+            x, y = i / UP - 0.25, j / UP - 0.25
             h = tree.ray_cast(P(x, y, -400), Vector((0, 1, 0)))
-            if h[0] is not None:
-                last = h[0].y
-                facing[v] = -h[1].y
-            v.co = Vector((P(x, y).x, last - 0.8 * S, P(x, y).z))
-        # lines on surfaces seen edge-on would smear into streaks from other angles: leave them out
-        bad = [f for f in bm.faces if sum(facing.get(v, 0.0) for v in f.verts) / len(f.verts) < 0.3]
-        bmesh.ops.delete(bm, geom=bad, context='FACES')
-        me = bpy.data.meshes.new(f'lines.{name}')
-        bm.to_mesh(me)
-        bm.free()
-        ob = bpy.data.objects.new(f'lines.{name}', me)
-        COL.objects.link(ob)
-        me.materials.append(flat('ink'))
-        fix_facing(ob)
-        part(ob, PARTS[name][1], 0)
+            idx[i, j] = len(verts)
+            verts.append([x, y, h[0].y if h[0] is not None else None])
+            facing.append(-h[1].y if h[0] is not None else 0.0)
+        return idx[i, j]
+    for j, i in zip(ys, xs):
+        faces.append((vid(i, j), vid(i + 1, j), vid(i + 1, j + 1), vid(i, j + 1)))
+    known = [v[2] for v in verts if v[2] is not None]
+    fill = sum(known) / len(known) if known else 0.0
+    co = [Vector((P(x, y).x, (d if d is not None else fill) - lift * S, P(x, y).z)) for x, y, d in verts]
+    faces = [f for f in faces if sum(facing[k] for k in f) / 4 >= 0.3]
+    ob = new_obj(name, co, faces, [mat])
+    for p in ob.data.polygons:
+        p.use_smooth = False
+    fix_facing(ob)
+    part(ob, bones, 0)
 
 
 def export_glb(path):
@@ -1091,6 +1353,7 @@ if __name__ == '__main__':
     finish_outlines()
     traced_lines()
     RIG = build_rig()
+    find_poles(RIG)
     skin(RIG)
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'doodle.blend'))
     if '--glb' in sys.argv:

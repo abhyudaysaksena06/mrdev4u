@@ -107,18 +107,24 @@ def regions(mask, up=4, blur=0.9):
 
 
 def colour_class(a):
-    """Per pixel: 'lime', 'navy' or 'green' (anything else in the hood falls back to green)."""
+    """Per pixel: 'lime', 'navy', 'shade' (the soft blue-grey shadow under the chin) or 'base'."""
     m = np.stack([ndi.median_filter(a[..., c].astype(float), 3) for c in range(3)], -1)
-    lime = near(m, '#9fcc99', 45)
-    navy = np.sqrt(((m - np.array([30, 57, 76])) ** 2).sum(-1)) < 22
-    # clean edges: a majority vote over a small disc
-    k = disk(2).astype(float)
+    dist = lambda c: np.sqrt(((m - np.array(c)) ** 2).sum(-1))
+    cls = {
+        'lime': near(m, '#9fcc99', 45),
+        # the lining is a wide fill; ink lines are the same colour but thin, so open them away
+        'navy': ndi.binary_opening(dist((30, 57, 76)) < 26, disk(3)),
+        'shade': (dist((190, 206, 214)) < 20) | (dist((203, 218, 223)) < 12),
+    }
+    k = disk(3).astype(float)
     k /= k.sum()
-    lime = ndi.convolve(lime.astype(float), k) > 0.5
-    navy = ndi.convolve(navy.astype(float), k) > 0.5
-    out = np.full(a.shape[:2], 'green', object)
-    out[lime] = 'lime'
-    out[navy] = 'navy'
+    out = np.full(a.shape[:2], 'base', object)
+    for name, m_ in cls.items():
+        m_ = ndi.convolve(m_.astype(float), k) > 0.5   # majority vote: clean edges, no speckle
+        lab, n = ndi.label(m_)
+        sizes = ndi.sum(m_, lab, range(1, n + 1))
+        m_ = np.isin(lab, [i + 1 for i, s_ in enumerate(sizes) if s_ >= 30])
+        out[m_] = name
     return out
 
 
