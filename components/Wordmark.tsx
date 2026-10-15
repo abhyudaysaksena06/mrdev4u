@@ -6,7 +6,8 @@ import { EASE } from './motion'
 
 /**
  * Edge-to-edge wordmark (Superfluid-style footer). The font size is fitted to the
- * container width; letters rise in on scroll and each one jumps and turns orange on hover.
+ * container width (capped by the screen height so the footer still fits one screen on wide,
+ * short windows); letters rise in on scroll and each one jumps and turns orange on hover.
  */
 export function Wordmark({ text }: { text: string }) {
   const box = useRef<HTMLDivElement>(null)
@@ -30,7 +31,7 @@ export function Wordmark({ text }: { text: string }) {
 
   const letters = [...text.toUpperCase()]
   return (
-    <div ref={box} className="relative px-4 tab:px-6" aria-label={text} role="img">
+    <div ref={box} className="relative shrink-0 px-4 tab:px-6" aria-label={text} role="img">
       {/* hidden copy at 100px used to fit the real one to the width */}
       <span ref={measure} aria-hidden className="display pointer-events-none invisible absolute left-0 top-0 whitespace-nowrap text-[100px]">
         {text.toUpperCase()}
@@ -38,7 +39,7 @@ export function Wordmark({ text }: { text: string }) {
       <motion.p
         aria-hidden
         className="display flex justify-between overflow-hidden whitespace-nowrap leading-[0.8]"
-        style={{ fontSize: size ? `${size * 0.99}px` : '23vw' }}
+        style={{ fontSize: `min(${size ? `${size * 0.99}px` : '13vw'}, 32svh)` }}
         initial="hidden"
         whileInView="shown"
         viewport={{ once: true, amount: 0.4 }}

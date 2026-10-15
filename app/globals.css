@@ -111,14 +111,15 @@ body::after {
   display: block;
   transition: transform 0.35s var(--ease-out);
 }
+/* The extra 0.2em keeps the hidden copy's glyph tops (taller than the 0.9 line box) out of view. */
 .roll > span + span {
   position: absolute;
   inset: 0;
-  transform: translateY(100%);
+  transform: translateY(calc(100% + 0.2em));
 }
 .group:hover .roll > span:first-child,
 .group:focus-visible .roll > span:first-child {
-  transform: translateY(-100%);
+  transform: translateY(calc(-100% - 0.2em));
 }
 .group:hover .roll > span + span,
 .group:focus-visible .roll > span + span {

@@ -1,7 +1,8 @@
 // Everything personal lives here. Replace the placeholders marked TODO.
 export const site = {
   alias: 'mrdev4u',
-  wordmark: 'mr.dev4u', // the giant footer wordmark
+  handle: 'mr.dev4u',
+  wordmark: 'mr.developer4u', // the giant footer wordmark
   name: 'Abhyuday Saksena',
   role: 'Creative developer',
   url: 'https://www.mrdev4u.com',
