@@ -1,8 +1,8 @@
 # mrdev4u
 
-Portfolio site: Grigoletti-style editorial layout and motion, with a 3D "m/" logo that
-assembles in the preloader, reacts to the cursor in the hero, docks into the nav on scroll,
-and becomes a toy in the footer and on the 404 page.
+Portfolio site: Grigoletti-style editorial layout and motion, an "m/" logo that
+assembles in the preloader and lives in the nav, a doodle of me as the hero element,
+and a playable 3D version of the logo on the 404 page.
 
 Built with Next.js 16, React 19, Tailwind CSS 4, Motion, Lenis and React Three Fiber.
 
@@ -38,9 +38,10 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
   animations off get a one-time notice offering to turn motion on. Reduced mode keeps a short, still
   preloader, fades instead of slides, no smooth scroll, and a 3D logo without idle spin.
 - **One curve:** `--ease-out: cubic-bezier(0.12, 0.23, 0.5, 1)`, measured from grigoletti.ch.
-- **3D logo:** `components/logo/`. Loads only after the intro *and* the visitor's first
-  interaction, on devices with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
-  Rendering stops once the logo has docked.
+- **3D logo toy:** `components/logo/` (404 page). Loads only on interaction, on devices
+  with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
+- **Doodle:** `components/doodle/Doodle.tsx`, one SVG with named parts (head, eyes, arms, legs)
+  ready to be animated.
 - **Smooth scroll:** Lenis on fine-pointer devices only.
 - **Page transitions:** View Transitions API via `next-view-transitions`; project covers morph
   into the case-study hero.

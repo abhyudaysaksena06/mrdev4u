@@ -4,7 +4,6 @@ import { usePathname } from 'next/navigation'
 import { AnimatePresence, motion } from 'motion/react'
 import { useEffect, useState } from 'react'
 import { site } from '@/lib/site'
-import { useStore } from '@/lib/store'
 import { LogoMark } from './logo/LogoMark'
 import { LocalTime, MotionToggle, Pill, ThemeToggle } from './ui'
 
@@ -12,16 +11,12 @@ export function Nav() {
   const pathname = usePathname()
   const [hidden, setHidden] = useState(false)
   const [menu, setMenu] = useState(false)
-  const logo3d = useStore(s => s.logo3d)
-  const docked = useStore(s => s.docked)
   const home = pathname === '/'
-  // On the home page the 3D logo flies into this slot; the flat mark takes over once it lands.
-  const hideMark = home && logo3d && !docked
 
   useEffect(() => setMenu(false), [pathname])
 
   // Hide while scrolling down, return on scroll up (Grigoletti pattern).
-  // On the home page it stays put until the 3D logo has docked into it.
+  // On the home page it stays put while the hero is in view.
   useEffect(() => {
     let last = window.scrollY
     const threshold = home ? window.innerHeight * 0.9 : 140
@@ -50,13 +45,10 @@ export function Nav() {
             href="/"
             aria-label={`${site.alias}, home`}
             data-cursor="Home"
-            className={`relative flex items-center rounded-[4px] border bg-paper px-2.5 py-2 transition-[border-color,background-color] duration-300 ${hideMark ? 'border-transparent bg-transparent' : 'border-ink'}`}
+            className="relative flex items-center rounded-[4px] border border-ink bg-paper px-2.5 py-2"
           >
             <span id="nav-logo-slot" className="block h-[1.35rem] w-[2.62rem] text-ink">
-              <LogoMark
-                className={`size-full transition-opacity duration-300 ${hideMark ? 'opacity-0' : ''}`}
-                title={site.alias}
-              />
+              <LogoMark className="size-full" title={site.alias} />
             </span>
           </Link>
 

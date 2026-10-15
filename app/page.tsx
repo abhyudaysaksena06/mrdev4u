@@ -2,7 +2,7 @@ import { projects } from '@/lib/projects'
 import { site } from '@/lib/site'
 import { Preloader, IntroFade, IntroLines, IntroWords } from '@/components/intro'
 import { HeroCover } from '@/components/home/HeroCover'
-import { HeroLogo } from '@/components/logo/HeroLogo'
+import { HeroDoodle } from '@/components/home/HeroDoodle'
 import { Services } from '@/components/home/Services'
 import { WorkRows } from '@/components/home/WorkRows'
 import { AboutGrow } from '@/components/home/AboutGrow'
@@ -42,11 +42,11 @@ export default function Home() {
             </div>
           </div>
           <div className="col-span-10 col-start-2 order-first mt-2 mb-8 flex flex-col justify-end tab:col-span-8 tab:col-start-3 desk:order-none desk:col-span-5 desk:col-start-auto desk:mb-0">
-            <HeroLogo />
+            <HeroDoodle />
             <IntroFade delay={600} className="mt-4 hidden items-center gap-4 font-display text-sm uppercase desk:flex">
               <span>By {site.alias}</span>
               <span className="h-px flex-1 bg-ink/40" />
-              <span className="font-mono text-xs text-body">Move your cursor</span>
+              <span className="font-mono text-xs text-body">Say hi</span>
             </IntroFade>
           </div>
         </div>
