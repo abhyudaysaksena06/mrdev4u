@@ -31,16 +31,9 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 
 ## How the motion works
 
-- **Intro:** a short animated film plus CSS (`Intro timeline` in `globals.css`), so it starts at first
-  paint. For about 4 s the doodle walks in pushing the m/ logo until it lands in the centre, then turns
-  to face you and hops as the curtain lifts (beat by beat in `docs/ANIMATION_PLAN.md`). The film is a
-  self-contained animated SVG in `public/preloader/` (wide/tall × light/dark):
-  `scripts/doodle-trace/push.py` traces the head, torso and hands of the pushing drawing, and
-  `film.py` adds drawn sleeves and legs, solves elbows and knees with two-bone IK every frame (hands
-  on the logo, feet planted on the ground) and samples the motion at 30 fps. It plays on every full
-  load of the home page and is skipped when you navigate back to home inside the site. Change its
-  length with `--intro-base` and the `.preloader` timings together (and the matching wait in
-  `HeroDoodle.tsx`).
+- **Intro:** pure CSS (`Intro timeline` in `globals.css`), so it starts at first paint: the m/ logo's
+  pieces fly together while a counter runs, then the curtain lifts. It plays on every full load of
+  the home page and is skipped when you navigate back to home inside the site.
 - **Motion preference:** `<html data-motion="full|reduce">`, set before paint from the visitor's saved
   choice or their OS setting. The nav's *Motion* toggle overrides it, and visitors whose OS has
   animations off get a one-time notice offering to turn motion on. Reduced mode keeps a short, still
@@ -49,10 +42,8 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 - **3D logo toy:** `components/logo/` (404 page). Loads only on interaction, on devices
   with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
 - **Doodle:** traced from the reference drawing by `scripts/doodle-trace/` into `public/doodle.svg`
-  (an outline silhouette plus one smooth shape per flat colour; head, pupils and arms with round
-  shoulder and elbow joints are separate parts, pivots in `data-pivot`). `HeroDoodle.tsx` shows it as
-  an image, then inlines the cached file: he follows the cursor, and each click plays a move from
-  `doodleMoves.ts` (wave, jump, shrug, look, spin, nod; five quick clicks startle him).
+  and shown still in the hero (`HeroDoodle.tsx`). His animation will come from the rigged 3D model
+  built in Blender by `scripts/doodle-3d/build_model.py`.
 - **Smooth scroll:** Lenis on fine-pointer devices only.
 - **Page transitions:** View Transitions API via `next-view-transitions`; project covers morph
   into the case-study hero.

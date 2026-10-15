@@ -1,5 +1,9 @@
 # Doodle animation plan
 
+> **Status:** the 2D versions of the preloader film and the click moves were removed from the site.
+> The doodle is being rebuilt as a rigged 3D model in Blender (`scripts/doodle-3d/`); once the model
+> is approved, these beats are animated on it instead. The principles and beats below still apply.
+
 The doodle is the site's character. This plan covers the two places he performs: the preloader
 (the first impression) and the hero on the home page (where visitors can play with him).
 

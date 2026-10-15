@@ -16,19 +16,6 @@ export default function Home() {
   preload('/doodle.svg', { as: 'image' })
   return (
     <>
-      {/* Fetch the preloader film right away (the likely cut and theme; CSS makes the final pick). */}
-      {(['wide', 'tall'] as const).flatMap(cut =>
-        (['light', 'dark'] as const).map(theme => (
-          <link
-            key={cut + theme}
-            rel="preload"
-            as="image"
-            href={`/preloader/${cut}-${theme}.svg`}
-            media={`(${cut === 'wide' ? 'min' : 'max'}-aspect-ratio: 1/1) and (prefers-color-scheme: ${theme})`}
-            fetchPriority="high"
-          />
-        )),
-      )}
       <Preloader />
 
       <HeroCover>
@@ -62,7 +49,6 @@ export default function Home() {
             <IntroFade delay={600} className="mt-4 hidden items-center gap-4 font-display text-sm uppercase desk:flex">
               <span>By {site.alias}</span>
               <span className="h-px flex-1 bg-ink/40" />
-              <span className="font-mono text-xs text-body">Say hi</span>
             </IntroFade>
           </div>
         </div>

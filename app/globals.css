@@ -212,7 +212,7 @@ body::after {
   initial-value: 0;
 }
 :root {
-  --intro-base: 3.65s; /* when the hero starts revealing after the preloader */
+  --intro-base: 1.45s; /* when the hero starts revealing after the preloader */
 }
 html.no-intro {
   --intro-base: 0.05s;
@@ -223,7 +223,7 @@ html.no-intro {
   inset: 0;
   z-index: 60;
   background: var(--paper);
-  animation: curtain 0.65s var(--ease-inout) 3.35s both;
+  animation: curtain 0.65s var(--ease-inout) 1.15s both;
 }
 html.no-intro .preloader {
   display: none;
@@ -234,25 +234,23 @@ html.no-intro .preloader {
     visibility: hidden;
   }
 }
-/* The film (see components/intro.tsx): wide or tall cut, light or dark version. Only the one in use loads. */
-.preloader-film {
-  background: url('/preloader/wide-light.svg') center / cover no-repeat;
+.preloader .piece {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: assemble 0.85s var(--ease-out) var(--d) both;
 }
-:root[data-theme='dark'] .preloader-film {
-  background-image: url('/preloader/wide-dark.svg');
-}
-@media (max-aspect-ratio: 1/1) {
-  .preloader-film {
-    background-image: url('/preloader/tall-light.svg');
-    background-size: contain;
+@keyframes assemble {
+  from {
+    transform: translate(var(--dx), var(--dy)) rotate(var(--rot));
+    opacity: 0;
   }
-  :root[data-theme='dark'] .preloader-film {
-    background-image: url('/preloader/tall-dark.svg');
+  35% {
+    opacity: 1;
   }
 }
 .preloader .counter {
   counter-reset: n var(--n);
-  animation: count 3.2s var(--ease-out) both;
+  animation: count 1.05s var(--ease-out) both;
 }
 .preloader .counter::after {
   content: counter(n, decimal-leading-zero);
@@ -309,6 +307,9 @@ html.no-intro .preloader {
 :root[data-motion='reduce'] .preloader {
   animation: fade-away 0.3s ease 0.45s both;
 }
+:root[data-motion='reduce'] .preloader .piece {
+  animation: none;
+}
 :root[data-motion='reduce'] .preloader .counter {
   animation-duration: 0.4s;
 }
@@ -339,41 +340,8 @@ html.no-intro .preloader {
   fill: #000;
   opacity: 0.55;
 }
-/* Hero: only the doodle's top half shows, fading out at the bottom; he rises in after the intro. */
+/* Hero: only the doodle's top half shows, fading out at the bottom. */
 .doodle-bust {
   -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 99%);
   mask-image: linear-gradient(to bottom, #000 80%, transparent 99%);
-}
-.doodle-rise {
-  animation: doodle-rise 0.9s cubic-bezier(0.34, 1.4, 0.5, 1) both;
-  animation-delay: calc(var(--intro-base) + 0.1s);
-}
-@keyframes doodle-rise {
-  from {
-    transform: translateY(70%);
-  }
-}
-:root[data-motion='reduce'] .doodle-rise {
-  animation-name: fade-only;
-  animation-duration: 0.3s;
-}
-/* Blink every few seconds. The pupils' parent carries the look-at transform, so the blink
-   scales this inner group only. */
-.doodle-blink {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: doodle-blink 5.2s infinite;
-}
-@keyframes doodle-blink {
-  0%,
-  93%,
-  100% {
-    transform: scaleY(1);
-  }
-  95% {
-    transform: scaleY(0.1);
-  }
-}
-:root[data-motion='reduce'] .doodle-blink {
-  animation: none;
 }
