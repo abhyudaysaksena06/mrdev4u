@@ -1,7 +1,6 @@
 # mrdev4u
 
-Portfolio site: Grigoletti-style editorial layout and motion, with a 3D "M/" monogram (the orange
-stroke is both the M's right leg and a developer's slash) that
+Portfolio site: Grigoletti-style editorial layout and motion, with a 3D "m/" logo that
 assembles in the preloader, reacts to the cursor in the hero, docks into the nav on scroll,
 and becomes a toy in the footer and on the 404 page.
 
@@ -27,7 +26,7 @@ npm run typecheck
 | Colours, easing curves, grain | `app/globals.css` |
 | Logo shape (shared by the SVG and the 3D model) | `components/logo/geometry.ts` |
 
-Change the logo by editing the four pieces in `geometry.ts` (they must tile without overlapping); the SVG mark, favicon generator,
+Change the logo by editing the five pieces in `geometry.ts`; the SVG mark, favicon generator,
 preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change it.
 
 ## How the motion works

@@ -44,7 +44,7 @@ export function Footer() {
           title="Work"
           top={
             <span className="flex items-center gap-2 font-display text-lg uppercase group-hover:text-paper">
-              <LogoMark className="h-5 w-7" /> {site.handle}
+              <LogoMark className="h-5 w-10" /> {site.handle}
             </span>
           }
         />
@@ -64,12 +64,13 @@ export function Footer() {
 
         <div className="flex flex-1 flex-col gap-5 tab:col-span-5 tab:justify-between">
           <div className="order-last mt-auto tab:order-none tab:mt-0 tab:self-end tab:text-right">
-            <p className="mb-2 font-mono text-xs uppercase text-muted tab:mb-3">Follow</p>
-            <ul className="flex flex-wrap gap-x-5 gap-y-1.5 tab:flex-col tab:items-end">
+            <p className="mb-2 font-mono text-xs uppercase text-muted tab:mb-3 tab:text-sm">Follow</p>
+            <ul className="flex flex-wrap gap-x-5 gap-y-1 tab:flex-col tab:items-end tab:gap-y-0">
               {site.socials.map(s => (
                 <li key={s.label}>
-                  <a href={s.href} className="text-sm text-body transition-colors hover:text-ink" target="_blank" rel="noreferrer">
-                    {s.label} ↗
+                  <a href={s.href} className="display group/s inline-flex items-center gap-1.5 text-[min(6vw,4.5svh)] text-body transition-colors hover:text-accent tab:text-[min(3.4vw,6svh)]" target="_blank" rel="noreferrer">
+                    {s.label}
+                    <span aria-hidden className="text-[0.6em] transition-transform duration-300 group-hover/s:-translate-y-1 group-hover/s:translate-x-1">↗</span>
                   </a>
                 </li>
               ))}
@@ -102,7 +103,7 @@ export function Footer() {
 
       <div className="flex shrink-0 flex-col gap-1.5 px-4 pt-3 pb-4 font-mono text-[11px] uppercase text-muted tab:flex-row tab:items-center tab:justify-between tab:px-6 tab:pb-5">
         <span className="flex items-center gap-2">
-          <LogoMark className="h-3.5 w-5 text-ink" />
+          <LogoMark className="h-3.5 w-7 text-ink" />
           Designed and built by {site.name}
         </span>
         <span className="flex items-center gap-5">
