@@ -294,3 +294,33 @@ html.no-intro .preloader {
     opacity: 0;
   }
 }
+
+/* ---------- Doodle ---------- */
+.doodle-shadow {
+  fill: #1e2a3a;
+  opacity: 0.14;
+}
+:root[data-theme='dark'] .doodle-shadow {
+  fill: #000;
+  opacity: 0.55;
+}
+/* Blink every few seconds. The pupils' parent carries the look-at transform, so the blink
+   scales this inner group only. */
+.doodle-blink {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: doodle-blink 5.2s infinite;
+}
+@keyframes doodle-blink {
+  0%,
+  93%,
+  100% {
+    transform: scaleY(1);
+  }
+  95% {
+    transform: scaleY(0.1);
+  }
+}
+:root[data-motion='reduce'] .doodle-blink {
+  animation: none;
+}
