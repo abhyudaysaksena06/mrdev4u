@@ -1,7 +1,8 @@
 'use client'
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { setStore } from '@/lib/store'
 import { isReduced } from '@/lib/motion-pref'
+import { MOVES, ROTATION, rest, sample, type Channel, type Move } from './doodleMoves'
 
 // Marks the intro as finished once the CSS preloader timeline has played.
 function useIntroClock() {
@@ -19,17 +20,36 @@ function useIntroClock() {
 
 const clamp = (v: number, a = -1, b = 1) => Math.min(b, Math.max(a, v))
 const IDLE_AFTER = 6000 // ms without pointer movement before he starts looking around on his own
+const FEET = '492 2110' // pivot for whole-body moves, in the drawing's units
+const f = (v: number) => v.toFixed(2)
+const neg = (pt: string) => pt.split(' ').map(v => -Number(v)).join(' ')
+
+type Playing = { move: Move; start: number } | null
 
 /**
- * Makes the doodle look at the cursor: the pupils follow it, the head turns toward it and tilts,
- * and he sways a little. Without a mouse (or after a while without movement) he looks around
- * slowly. Runs only while the hero is on screen and stays still when motion is reduced.
+ * Brings the doodle to life: he looks at the cursor (pupils, head turn and tilt, a little sway),
+ * breathes, and plays a move when asked (see doodleMoves.ts). Without a mouse, or after a while
+ * without movement, he looks around slowly. Runs only while the hero is on screen; still when motion
+ * is reduced. Returns play(name).
  */
-function useLookAt(svg: SVGSVGElement | null) {
+function useDoodle(svg: SVGSVGElement | null) {
+  const playing = useRef<Playing>(null)
+  const kick = useRef<() => void>(() => {})
+
   useEffect(() => {
     if (!svg) return
-    const q = (name: string) => svg.querySelector<SVGGElement>(`[data-part="${name}"]`)!
-    const parts = { upper: q('upper'), head: q('head'), pupils: q('pupils') }
+    const q = (name: string) => svg.querySelector<SVGGElement>(`[data-part="${name}"]`)
+    const upper = q('upper')!
+    // wrap everything but the shadow so whole-body moves (jump, spin) can scale about the feet
+    const body = document.createElementNS('http://www.w3.org/2000/svg', 'g')
+    upper.parentNode!.insertBefore(body, upper)
+    body.appendChild(upper)
+    const parts = { upper, head: q('head')!, pupils: q('pupils')!, armL: q('arm-l'), foreL: q('fore-l'), armR: q('arm-r'), foreR: q('fore-r') }
+    const shadow = svg.querySelector<SVGEllipseElement>('.doodle-shadow')
+    const pivot = (el: SVGGElement | null) => el?.getAttribute('data-pivot') ?? '0 0'
+    const pb = parts.pupils.getBBox()
+    const pupilC = `${f(pb.x + pb.width / 2)} ${f(pb.y + pb.height / 2)}`
+    const shadowC = shadow ? `${shadow.getAttribute('cx')} ${shadow.getAttribute('cy')}` : '0 0'
     const fine = matchMedia('(hover: hover) and (pointer: fine)').matches
 
     const target = { x: 0, y: 0 }
@@ -40,13 +60,26 @@ function useLookAt(svg: SVGSVGElement | null) {
     let last = 0
     let visible = true
 
-    // Units are the traced artwork's (about 3 per original pixel). Pivots: head 498 549, feet 492 2110.
     const apply = (t: number) => {
+      let m = {} as Record<Channel, number>
+      const p = playing.current
+      if (p) {
+        const prog = (t - p.start) / (p.move.duration * 1000)
+        if (prog >= 1) playing.current = null
+        else m = sample(p.move, Math.max(0, prog))
+      }
+      const c = (k: Channel) => m[k] ?? rest(k)
       const { x, y } = cur
       const breathe = Math.sin(t / 650) * 3
-      parts.upper.setAttribute('transform', `translate(0 ${breathe.toFixed(2)}) rotate(${(x * 0.8).toFixed(3)} 492 2110)`)
-      parts.head.setAttribute('transform', `translate(${(x * 3).toFixed(2)} ${(y * 3).toFixed(2)}) rotate(${(x * 3).toFixed(3)} 498 549)`)
-      parts.pupils.setAttribute('transform', `translate(${(x * 11).toFixed(2)} ${(y * 7).toFixed(2)})`)
+      body.setAttribute('transform', `translate(${f(c('bodyX'))} ${f(c('bodyY'))}) rotate(${f(c('bodyR'))} ${FEET}) translate(${FEET}) scale(${f(c('bodySX'))} ${f(c('bodySY'))}) translate(${neg(FEET)})`)
+      parts.upper.setAttribute('transform', `translate(0 ${f(breathe + c('upperY'))}) rotate(${f(x * 0.8 + c('upperR'))} ${FEET})`)
+      parts.head.setAttribute('transform', `translate(${f(x * 3 + c('headX'))} ${f(y * 3 + c('headY'))}) rotate(${f(x * 3 + c('headR'))} 498 549)`)
+      parts.pupils.setAttribute('transform', `translate(${f(x * 11 + c('pupilsX'))} ${f(y * 7 + c('pupilsY'))}) translate(${pupilC}) scale(${f(c('pupilsS'))}) translate(${neg(pupilC)})`)
+      parts.armL?.setAttribute('transform', `rotate(${f(c('armL'))} ${pivot(parts.armL)})`)
+      parts.foreL?.setAttribute('transform', `rotate(${f(c('foreL'))} ${pivot(parts.foreL)})`)
+      parts.armR?.setAttribute('transform', `rotate(${f(c('armR'))} ${pivot(parts.armR)})`)
+      parts.foreR?.setAttribute('transform', `rotate(${f(c('foreR'))} ${pivot(parts.foreR)})`)
+      shadow?.setAttribute('transform', `translate(${shadowC}) scale(${f(c('shadowS'))} 1) translate(${neg(shadowC)})`)
     }
 
     const tick = (t: number) => {
@@ -77,6 +110,7 @@ function useLookAt(svg: SVGSVGElement | null) {
       raf = 0
       last = 0
     }
+    kick.current = start
 
     const onMove = (e: PointerEvent) => {
       if (e.pointerType !== 'mouse' && e.pointerType !== 'pen') return
@@ -87,6 +121,7 @@ function useLookAt(svg: SVGSVGElement | null) {
     const onMotion = () => {
       if (isReduced()) {
         stop()
+        playing.current = null
         cur.x = cur.y = 0
         apply(0)
       } else start()
@@ -117,27 +152,33 @@ function useLookAt(svg: SVGSVGElement | null) {
       document.removeEventListener('visibilitychange', onVis)
     }
   }, [svg])
+
+  return useCallback((name: string) => {
+    const move = MOVES[name]
+    if (!move || isReduced()) return
+    playing.current = { move, start: performance.now() }
+    kick.current()
+  }, [])
 }
 
 const TITLE = 'Doodle of Abhyuday'
-// Things he says when clicked, in turn.
-const LINES = ["Hi! I'm Abhyuday", 'Yes, I built all of this', 'Scroll down, it gets better', "Got a project? Let's talk"]
 
 /**
  * The hero element: the top half of the doodle (traced from the reference drawing, see
- * scripts/doodle-trace), rising from the bottom edge after the preloader. It first shows as a
- * plain <img> so the page stays light, then the same cached file is inlined so his parts can move:
- * he follows your cursor, and clicking him makes him hop and say something.
+ * scripts/doodle-trace), rising from the bottom edge after the preloader. It first shows as a plain
+ * <img> so the page stays light, then the same cached file is inlined so his parts can move: he
+ * follows your cursor, and every click plays a different move with a line to go with it.
  */
 export function HeroDoodle() {
   useIntroClock()
   const img = useRef<HTMLImageElement>(null)
   const slot = useRef<HTMLSpanElement>(null)
-  const hopper = useRef<HTMLDivElement>(null)
-  const count = useRef(0)
+  const next = useRef(0)
+  const lastMove = useRef('')
+  const clicks = useRef<number[]>([])
   const [svg, setSvg] = useState<SVGSVGElement | null>(null)
   const [said, setSaid] = useState<{ n: number; text: string } | null>(null)
-  useLookAt(svg)
+  const play = useDoodle(svg)
 
   useEffect(() => {
     let alive = true
@@ -163,40 +204,47 @@ export function HeroDoodle() {
   // The speech bubble fades out after a moment.
   useEffect(() => {
     if (!said) return
-    const id = setTimeout(() => setSaid(null), 2600)
+    const id = setTimeout(() => setSaid(null), 2400)
     return () => clearTimeout(id)
   }, [said])
 
   const hi = () => {
-    const n = count.current++
-    setSaid({ n, text: LINES[n % LINES.length] })
-    if (!isReduced())
-      hopper.current?.animate(
-        [{ transform: 'none' }, { transform: 'translateY(-7%)', offset: 0.35 }, { transform: 'none', offset: 0.7 }, { transform: 'translateY(-2%)', offset: 0.85 }, { transform: 'none' }],
-        { duration: 650, easing: 'cubic-bezier(0.3, 0.7, 0.4, 1)' },
-      )
+    const now = performance.now()
+    clicks.current = [...clicks.current.filter(t => now - t < 1600), now]
+    let name: string
+    if (clicks.current.length >= 5) {
+      name = 'startled' // rapid clicking startles him
+      clicks.current = []
+    } else {
+      name = ROTATION[next.current % ROTATION.length]
+      if (name === lastMove.current) name = ROTATION[++next.current % ROTATION.length]
+      next.current++
+    }
+    lastMove.current = name
+    setSaid(s => ({ n: (s?.n ?? 0) + 1, text: MOVES[name].line ?? '' }))
+    play(name)
   }
 
   return (
     <div className="relative flex justify-center">
-      {/* Only his top half shows: the box crops the drawing just above the hands and fades out at the bottom. */}
+      {/* Only his top half shows: the box crops the drawing just above the hands and fades out at the
+          bottom. Room above and at the sides leaves space for jumps, waves and flung arms. */}
       <button
         type="button"
         onClick={hi}
         aria-label="Say hi to the doodle"
         data-cursor="Say hi"
-        className="doodle-bust relative block aspect-[984/1330] h-[30svh] overflow-hidden tab:h-[38svh] desk:h-[min(58svh,40rem)]"
+        className="doodle-bust relative block aspect-[1520/1730] h-[39svh] overflow-hidden tab:h-[49svh] desk:h-[min(75svh,52rem)]"
       >
-        <div ref={hopper} className="size-full">
-          <div className="doodle-rise">
-            <img ref={img} src="/doodle.svg" alt={TITLE} width={984} height={2169} className="block h-auto w-full" />
-            <span ref={slot} className="contents" />
-          </div>
+        {/* side room (the drawing is 984 wide in a 1520-wide box) for arms flung out */}
+        <div className="doodle-rise mx-auto w-[64.74%] pt-[40.65%]">
+          <img ref={img} src="/doodle.svg" alt={TITLE} width={984} height={2169} className="block h-auto w-full" />
+          <span ref={slot} className="contents" />
         </div>
       </button>
       <p
         aria-live="polite"
-        className={`pointer-events-none absolute top-[2%] left-1/2 -translate-x-[115%] whitespace-nowrap rounded-[4px] border border-ink bg-paper px-3 py-2 font-display text-sm uppercase leading-none transition-[opacity,translate] duration-300 ease-soft tab:text-base ${said ? 'opacity-100' : 'translate-y-2 opacity-0'}`}
+        className={`pointer-events-none absolute top-[17%] left-1/2 -translate-x-[115%] whitespace-nowrap rounded-[4px] border border-ink bg-paper px-3 py-2 font-display text-sm uppercase leading-none transition-[opacity,translate] duration-300 ease-soft tab:text-base ${said ? 'opacity-100' : 'translate-y-2 opacity-0'}`}
       >
         {said?.text}
       </p>

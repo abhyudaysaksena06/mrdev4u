@@ -49,8 +49,10 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 - **3D logo toy:** `components/logo/` (404 page). Loads only on interaction, on devices
   with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
 - **Doodle:** traced from the reference drawing by `scripts/doodle-trace/` into `public/doodle.svg`
-  (an outline silhouette plus one smooth shape per flat colour; head and pupils are separate).
-  `HeroDoodle.tsx` shows it as an image, then inlines the cached file and makes him follow the cursor.
+  (an outline silhouette plus one smooth shape per flat colour; head, pupils and arms with round
+  shoulder and elbow joints are separate parts, pivots in `data-pivot`). `HeroDoodle.tsx` shows it as
+  an image, then inlines the cached file: he follows the cursor, and each click plays a move from
+  `doodleMoves.ts` (wave, jump, shrug, look, spin, nod; five quick clicks startle him).
 - **Smooth scroll:** Lenis on fine-pointer devices only.
 - **Page transitions:** View Transitions API via `next-view-transitions`; project covers morph
   into the case-study hero.

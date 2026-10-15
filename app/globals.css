@@ -341,8 +341,8 @@ html.no-intro .preloader {
 }
 /* Hero: only the doodle's top half shows, fading out at the bottom; he rises in after the intro. */
 .doodle-bust {
-  -webkit-mask-image: linear-gradient(to bottom, #000 74%, transparent 99%);
-  mask-image: linear-gradient(to bottom, #000 74%, transparent 99%);
+  -webkit-mask-image: linear-gradient(to bottom, #000 80%, transparent 99%);
+  mask-image: linear-gradient(to bottom, #000 80%, transparent 99%);
 }
 .doodle-rise {
   animation: doodle-rise 0.9s cubic-bezier(0.34, 1.4, 0.5, 1) both;
