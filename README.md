@@ -40,8 +40,9 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 - **One curve:** `--ease-out: cubic-bezier(0.12, 0.23, 0.5, 1)`, measured from grigoletti.ch.
 - **3D logo toy:** `components/logo/` (404 page). Loads only on interaction, on devices
   with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
-- **Doodle:** `components/doodle/Doodle.tsx`, one SVG with named parts (head, eyes, arms, legs)
-  ready to be animated.
+- **Doodle:** traced from the reference drawing by `scripts/doodle-trace/` into `public/doodle.svg`
+  (an outline silhouette plus one smooth shape per flat colour; head and pupils are separate).
+  `HeroDoodle.tsx` shows it as an image, then inlines the cached file and makes him follow the cursor.
 - **Smooth scroll:** Lenis on fine-pointer devices only.
 - **Page transitions:** View Transitions API via `next-view-transitions`; project covers morph
   into the case-study hero.

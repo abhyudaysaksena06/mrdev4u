@@ -1,8 +1,7 @@
 'use client'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { setStore } from '@/lib/store'
 import { isReduced } from '@/lib/motion-pref'
-import { Doodle } from '../doodle/Doodle'
 
 // Marks the intro as finished once the CSS preloader timeline has played.
 function useIntroClock() {
@@ -22,17 +21,15 @@ const clamp = (v: number, a = -1, b = 1) => Math.min(b, Math.max(a, v))
 const IDLE_AFTER = 6000 // ms without pointer movement before he starts looking around on his own
 
 /**
- * Makes the doodle look at the cursor: pupils, face and hair shift by different amounts so the
- * head seems to turn, the head tilts and the upper body leans a little. Without a mouse (or after
- * a while without movement) he looks around slowly. Runs only while the hero is on screen and
- * stays still when motion is reduced.
+ * Makes the doodle look at the cursor: the pupils follow it, the head turns toward it and tilts,
+ * and he sways a little. Without a mouse (or after a while without movement) he looks around
+ * slowly. Runs only while the hero is on screen and stays still when motion is reduced.
  */
-function useLookAt(ref: React.RefObject<HTMLDivElement | null>) {
+function useLookAt(svg: SVGSVGElement | null) {
   useEffect(() => {
-    const svg = ref.current?.querySelector('svg')
     if (!svg) return
     const q = (name: string) => svg.querySelector<SVGGElement>(`[data-part="${name}"]`)!
-    const parts = { upper: q('upper'), head: q('head'), ears: q('ears'), hair: q('hair'), features: q('features'), pupils: q('pupils') }
+    const parts = { upper: q('upper'), head: q('head'), pupils: q('pupils') }
     const fine = matchMedia('(hover: hover) and (pointer: fine)').matches
 
     const target = { x: 0, y: 0 }
@@ -43,15 +40,13 @@ function useLookAt(ref: React.RefObject<HTMLDivElement | null>) {
     let last = 0
     let visible = true
 
+    // Units are the traced artwork's (about 3 per original pixel). Pivots: head 498 549, feet 492 2110.
     const apply = (t: number) => {
       const { x, y } = cur
-      const breathe = Math.sin(t / 650) * 1.2
-      parts.upper.setAttribute('transform', `translate(0 ${breathe.toFixed(2)}) rotate(${(x * 1.4).toFixed(3)} 388 600)`)
-      parts.head.setAttribute('transform', `translate(${(x * 3).toFixed(2)} ${(y * 2).toFixed(2)}) rotate(${(x * 5).toFixed(3)} 388 340)`)
-      parts.ears.setAttribute('transform', `translate(${(-x * 5).toFixed(2)} ${(y * 1.5).toFixed(2)})`)
-      parts.hair.setAttribute('transform', `translate(${(x * 3.5).toFixed(2)} ${(y * 2.5).toFixed(2)})`)
-      parts.features.setAttribute('transform', `translate(${(x * 7).toFixed(2)} ${(y * 5.5).toFixed(2)})`)
-      parts.pupils.setAttribute('transform', `translate(${(x * 5).toFixed(2)} ${(y * 4).toFixed(2)})`)
+      const breathe = Math.sin(t / 650) * 3
+      parts.upper.setAttribute('transform', `translate(0 ${breathe.toFixed(2)}) rotate(${(x * 0.8).toFixed(3)} 492 2110)`)
+      parts.head.setAttribute('transform', `translate(${(x * 3).toFixed(2)} ${(y * 3).toFixed(2)}) rotate(${(x * 3).toFixed(3)} 498 549)`)
+      parts.pupils.setAttribute('transform', `translate(${(x * 11).toFixed(2)} ${(y * 7).toFixed(2)})`)
     }
 
     const tick = (t: number) => {
@@ -121,17 +116,50 @@ function useLookAt(ref: React.RefObject<HTMLDivElement | null>) {
       window.removeEventListener('motionchange', onMotion)
       document.removeEventListener('visibilitychange', onVis)
     }
-  }, [ref])
+  }, [svg])
 }
 
-// The hero element: the doodle, who keeps an eye on your cursor.
+const TITLE = 'Doodle of Abhyuday'
+const SIZE = 'h-[34svh] w-auto tab:h-[42svh] desk:h-[min(68svh,46rem)]'
+
+/**
+ * The hero element: the doodle, traced from the reference drawing (scripts/doodle-trace).
+ * It first shows as a plain <img> so the page stays light, then the same file (now cached) is
+ * inlined so its parts can move and he keeps an eye on your cursor.
+ */
 export function HeroDoodle() {
   useIntroClock()
-  const ref = useRef<HTMLDivElement>(null)
-  useLookAt(ref)
+  const img = useRef<HTMLImageElement>(null)
+  const slot = useRef<HTMLSpanElement>(null)
+  const [svg, setSvg] = useState<SVGSVGElement | null>(null)
+  useLookAt(svg)
+
+  useEffect(() => {
+    let alive = true
+    fetch('/doodle.svg')
+      .then(r => r.text())
+      .then(text => {
+        if (!alive || !slot.current) return
+        const parsed = new DOMParser().parseFromString(text, 'image/svg+xml').documentElement
+        if (parsed.nodeName !== 'svg') return
+        const el = document.importNode(parsed, true) as unknown as SVGSVGElement
+        el.setAttribute('class', `${SIZE} overflow-visible`)
+        el.setAttribute('role', 'img')
+        el.setAttribute('aria-label', TITLE)
+        slot.current.replaceChildren(el)
+        if (img.current) img.current.hidden = true // swap in the same frame: no double figure
+        setSvg(el)
+      })
+      .catch(() => {}) // the <img> stays; he just doesn't move
+    return () => {
+      alive = false
+    }
+  }, [])
+
   return (
-    <div ref={ref} className="intro-fade flex justify-center" style={{ ['--d' as string]: '120ms' }}>
-      <Doodle className="h-[34svh] w-auto overflow-visible tab:h-[42svh] desk:h-[min(68svh,46rem)]" />
+    <div className="intro-fade flex justify-center" style={{ ['--d' as string]: '120ms' }}>
+      <img ref={img} src="/doodle.svg" alt={TITLE} width={984} height={2169} className={SIZE} />
+      <span ref={slot} className="contents" />
     </div>
   )
 }
