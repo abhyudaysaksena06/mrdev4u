@@ -32,12 +32,12 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 ## How the motion works
 
 - **Intro:** a short animated film plus CSS (`Intro timeline` in `globals.css`), so it starts at first
-  paint. For about 4 s the doodle pushes the m/ logo in from the right, stride by stride, until it sits
-  in the centre, then hops, and the curtain lifts. The film is a self-contained animated SVG in
-  `public/preloader/` (wide/tall × light/dark), built from a vector puppet of the pushing pose by
-  `scripts/doodle-trace/push.py` (rig: thighs, shins with round knee joints, torso filled in behind the
-  arms, arms, head) and `scene.py` (layout and timeline). It
-  plays on every full load of the home page and is skipped when you navigate back to home inside
+  paint. For about 4 s the doodle walks in pushing the m/ logo until it sits in the centre, lets go,
+  steps back and hops as the curtain lifts. The film is a self-contained animated SVG in
+  `public/preloader/` (wide/tall × light/dark). `scripts/doodle-trace/push.py` traces the upper body
+  of the pushing drawing; `walk.py` gives him new vector legs and animates a real walk (feet planted
+  on the ground, heels lifting on push-off, swing arcs, two-bone IK for the knees) sampled at 30 fps.
+  It plays on every full load of the home page and is skipped when you navigate back to home inside
   the site. Change its length with `--intro-base` and the `.preloader` timings together (and the
   matching wait in `HeroDoodle.tsx`).
 - **Motion preference:** `<html data-motion="full|reduce">`, set before paint from the visitor's saved

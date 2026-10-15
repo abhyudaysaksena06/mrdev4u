@@ -1,15 +1,12 @@
-# Turns the "pushing" pose (push-reference.png) into a vector puppet (rig) for the preloader.
+# Traces the upper body of the "pushing" drawing (push-reference.png) for the preloader film.
 #
 # Same tracing method as the standing doodle (matte -> flat colours -> outline silhouette + one smooth
-# shape per colour), but the figure is cut into parts that can move freely:
-#   thigh-back / thigh-front: pivot at the hip, each holding a shin that pivots at the knee
-#   upper: the torso, holding the arms (pivot at the shoulder) and the head (pivot at the neck)
-# Joints are round: the shin is cut along a circle round the knee and a matching disc sits under it,
-# so a bent knee never opens a gap. The torso is filled in behind the arms, so moving the arms shows
-# jacket, not a hole.
+# shape per colour), cut into parts that can move: the torso, the arms (pivot at the shoulder) and the
+# head (pivot at the neck). The torso is filled in behind the arms, so moving them shows jacket, not a
+# hole. The legs are not traced: walk.py draws new ones that can really walk.
 #
-# Writes rig.svg (a <g> fragment) and rig.json (pivots and sizes) into the current directory;
-# scene.py builds the preloader from them.
+# Writes upper.svg (a <g> fragment, hips at the origin) and rig.json (pivots, colours) into the
+# current directory; walk.py builds the film from them.
 #   python3 <repo>/scripts/doodle-trace/push.py
 import json, os, re
 import numpy as np
@@ -25,9 +22,6 @@ FRONT_ARM = [(368, 458), (432, 456), (442, 503), (512, 508), (586, 512), (594, 5
 BACK_ARM = [(420, 402), (472, 402), (476, 450), (502, 462), (530, 476), (544, 500), (516, 510), (470, 502), (440, 484), (420, 472)]
 TORSO_HULL = [(500, 455), (560, 438), (604, 430), (630, 470), (648, 560), (648, 630), (515, 630), (505, 560), (500, 500)]
 FRONT_HIP, BACK_HIP = (538, 615), (596, 618)
-FRONT_KNEE, BACK_KNEE = (493, 662), (640, 684)
-KNEE_R = 17
-SPLIT = [(571, 560), (571, 642), (610, 760), (640, 900)]  # runs down the gap between the legs
 SHOULDER, NECK, HIPS = (556, 498), (528, 468), (566, 616)
 
 # ---------- 1. matte: flood the light background in from the edges ----------
@@ -143,9 +137,8 @@ head = poly(HEAD) & alpha
 arms = (poly(FRONT_ARM) | poly(BACK_ARM)) & alpha & ~head
 jacket = np.isin(cls, ['green', 'lime', 'white'])
 legs = (oy >= 600) & ~dil(jacket, 3 * S) & alpha
-back_side = poly(SPLIT + [(800, 900), (800, 560)])
-leg_back, leg_front = legs & back_side, legs & ~back_side
 torso = alpha & ~legs & ~head & ~arms
+torso &= ~((oy >= 600) & ~dil(jacket, 1 * S))  # nothing of the old legs below the hem (walk.py draws new ones)
 
 # Fill the torso in behind the arms: each column takes the colour found a little below the hole
 # (so the tee strip and the jacket's front edges simply continue upwards).
@@ -161,18 +154,6 @@ torso_full = torso | hole
 full = layers_for(np.where(alpha, cls, '').astype(object))
 torso_layers = layers_for(tcls)
 
-
-def split_knee(leg, hip, knee):
-    """Thigh keeps everything up to the knee plus the knee disc; the shin is the rest, minus the disc."""
-    kx, ky = knee
-    dx, dy = kx - hip[0], ky - hip[1]
-    past = (ox - kx) * dx + (oy - ky) * dy > 0
-    disc = (ox - kx) ** 2 + (oy - ky) ** 2 <= KNEE_R ** 2
-    return (leg & ~past) | (leg & disc), leg & past & ~disc
-
-
-thigh_f, shin_f = split_knee(leg_front, FRONT_HIP, FRONT_KNEE)
-thigh_b, shin_b = split_knee(leg_back, BACK_HIP, BACK_KNEE)
 
 # ---------- 5. trace ----------
 n_trace = [0]
@@ -208,32 +189,21 @@ def g(name, pivot, inner):
     return f'<g class="r-{name}" {o}><g class="r-{name}-b" {o}>{inner}</g></g>'
 
 
-def knee_disc(knee):
-    kx, ky = U(knee)
-    return (f'<circle cx="{kx:.0f}" cy="{ky:.0f}" r="{KNEE_R * S - 2}" fill="{FILL["slate"]}" '
-            f'stroke="{FILL["ink"]}" stroke-width="{3.2 * S:.0f}"/>')
-
-
 grow = lambda m, r: dil(m, r) & alpha
-LEG_COLOURS = ['slate']  # pants and shoes: only the grey (stray light specks at the edges are dropped)
-leg_svg = {}
-for name, thigh, shin, hip, knee, other in [('back', thigh_b, shin_b, BACK_HIP, BACK_KNEE, leg_front),
-                                            ('front', thigh_f, shin_f, FRONT_HIP, FRONT_KNEE, None)]:
-    # A thigh reaches up under the jacket, and the back thigh also tucks under the front leg,
-    # but neither ever overlaps its own shin (that would show when the knee bends).
-    t = thigh | (grow(thigh, 6) & ~legs)
-    if other is not None:
-        t |= dil(thigh, 40) & other
-    shin_svg = g(f'shin-{name}', knee, shapes(full, shin, spill=grow(shin, 2) & ~thigh, only=LEG_COLOURS))
-    leg_svg[name] = g(f'thigh-{name}', hip, knee_disc(knee) + shin_svg + shapes(full, t, spill=grow(t, 4) & ~legs | t, only=LEG_COLOURS))
 
 torso_svg = shapes(torso_layers, grow(torso_full, 6))
 torso_svg += f'<g fill="{FILL["ink"]}">' + trace(full['ink'] & head & (oy >= 430)) + '</g>'  # dark backing behind the chin
 arms_svg = g('arms', SHOULDER, shapes(full, arms, spill=grow(arms, 5) & ~head))
 head_svg = g('head', NECK, shapes(full, head, spill=grow(head, 4), speckle=10))  # fine detail: glasses, eyes
-rig = g('body', HIPS, leg_svg['back'] + leg_svg['front'] + g('upper', HIPS, torso_svg + arms_svg + head_svg))
-open('rig.svg', 'w').write(rig)
+# The upper body on its own (torso, arms, head), with the hips at the origin, for walk.py, which gives
+# him new, fully animatable legs.
+hx, hy = U(HIPS)
+open('upper.svg', 'w').write(f'<g transform="translate({-hx:.0f} {-hy:.0f})">' + torso_svg + arms_svg + head_svg + '</g>')
+rel = lambda p: (U(p)[0] - hx, U(p)[1] - hy)
 meta = {'w': W, 'h': H, 'ground': U((0, 783))[1], 'front_hand': U((372, 500)), 'back_hand': U((425, 440)),
-        'front_foot': U((490, 760)), 'back_foot': U((700, 775)), 'fills': FILL}
+        'front_foot': U((490, 760)), 'back_foot': U((700, 775)), 'fills': FILL, 'scale': S,
+        'hips': (hx, hy), 'rel': {'front_hip': rel(FRONT_HIP), 'back_hip': rel(BACK_HIP), 'shoulder': rel(SHOULDER),
+                                  'neck': rel(NECK), 'front_hand': rel((372, 500)), 'back_hand': rel((425, 440)),
+                                  'ground': U((0, 783))[1] - hy}}
 json.dump(meta, open('rig.json', 'w'), default=float)
-print('rig bytes', len(rig), {k: v for k, v in meta.items() if k != 'fills'})
+print('upper body traced:', {k: v for k, v in meta['rel'].items()})
