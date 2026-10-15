@@ -1,7 +1,7 @@
 import { services } from '@/lib/site'
 import { LineReveal, Reveal } from '../motion'
 
-// Dark panel that slides over the pinned hero. Service headers stick and stack as you scroll.
+// Dark panel that slides over the pinned hero, listing services as three cards.
 export function Services() {
   return (
     <section
@@ -20,36 +20,36 @@ export function Services() {
         </Reveal>
       </div>
 
-      {/* Stacking cards: each card pins below the previous card's header row and covers its body,
-          so text never scrolls half-hidden under a sticky header. */}
-      <div className="mt-24">
+      {/* Three separate cards in normal flow: nothing pins or overlaps, each card rises in on scroll. */}
+      <div className="mt-24 space-y-4">
         {services.map((s, i) => (
-          <article
-            key={s.title}
-            className="sticky min-h-[78svh] border-t border-paper/15 bg-ink"
-            style={{ top: 16 + i * 84, zIndex: i + 1 }}
-          >
-            <header className="grid grid-cols-12 items-baseline py-5">
-              <span className="display col-span-3 text-4xl tab:text-6xl">0{i + 1}.</span>
-              <h3 className="display col-span-8 text-4xl tab:text-6xl">{s.title}</h3>
-              <span aria-hidden className="col-span-1 justify-self-end text-2xl text-paper/60">
-                ↙
-              </span>
-            </header>
-            <div className="grid grid-cols-12 pt-4 pb-20">
-              <div className="col-span-12 tab:col-span-6 tab:col-start-4">
-                <p className="max-w-md text-lg text-paper/70">{s.text}</p>
-                <ul className="mt-8">
-                  {s.items.map((it, j) => (
-                    <li key={it} className="flex items-baseline gap-4 border-b border-paper/15 py-2.5">
-                      <span className="font-mono text-xs text-paper/60">0{j + 1}</span>
-                      <span className="display text-xl tab:text-2xl">{it}</span>
-                    </li>
-                  ))}
-                </ul>
+          <Reveal key={s.title} as="div" y={60}>
+            <article className="group rounded-lg border border-paper/15 bg-paper/[0.03] px-5 transition-colors duration-500 hover:border-paper/40 tab:px-8">
+              <header className="grid grid-cols-12 items-baseline border-b border-paper/15 py-6">
+                <span className="display col-span-3 text-4xl tab:text-6xl">0{i + 1}.</span>
+                <h3 className="display col-span-8 text-4xl tab:text-6xl">{s.title}</h3>
+                <span
+                  aria-hidden
+                  className="col-span-1 justify-self-end text-2xl text-paper/60 transition-transform duration-500 ease-soft group-hover:-rotate-45"
+                >
+                  ↙
+                </span>
+              </header>
+              <div className="grid grid-cols-12 py-8 tab:py-10">
+                <div className="col-span-12 tab:col-span-6 tab:col-start-4">
+                  <p className="max-w-md text-lg text-paper/70">{s.text}</p>
+                  <ul className="mt-8">
+                    {s.items.map((it, j) => (
+                      <li key={it} className="flex items-baseline gap-4 border-b border-paper/15 py-2.5 last:border-b-0">
+                        <span className="font-mono text-xs text-paper/60">0{j + 1}</span>
+                        <span className="display text-xl tab:text-2xl">{it}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-            </div>
-          </article>
+            </article>
+          </Reveal>
         ))}
       </div>
     </section>
