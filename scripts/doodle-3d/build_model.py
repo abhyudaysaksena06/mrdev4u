@@ -62,8 +62,14 @@ COL = bpy.data.collections.new('doodle')
 SC.collection.children.link(COL)
 
 
+# Fabric folds: where cloth creases inward, a second, darker flat tone (a toon fold), read from the
+# surface's own concavity, so folds appear and vanish as the cloth moves.
+FOLD = {'hoodie': '#365a51'}
+FOLD_AT = 0.465  # pointiness below this (a crease) takes the fold tone
+
+
 def flat(name):
-    """Unlit flat colour (emission), what the drawing uses."""
+    """Unlit flat colour (emission), what the drawing uses; fabrics get a fold tone in creases."""
     if name in bpy.data.materials:
         return bpy.data.materials[name]
     m = bpy.data.materials.new(name)
@@ -74,6 +80,16 @@ def flat(name):
     e.inputs['Color'].default_value = (*srgb(PAL[name]), 1)
     o = nt.nodes.new('ShaderNodeOutputMaterial')
     nt.links.new(e.outputs[0], o.inputs[0])
+    if name in FOLD:
+        g = nt.nodes.new('ShaderNodeNewGeometry')
+        ramp = nt.nodes.new('ShaderNodeValToRGB')
+        ramp.color_ramp.interpolation = 'CONSTANT'
+        ramp.color_ramp.elements[0].position = 0.0
+        ramp.color_ramp.elements[0].color = (*srgb(FOLD[name]), 1)
+        ramp.color_ramp.elements[1].position = FOLD_AT
+        ramp.color_ramp.elements[1].color = (*srgb(PAL[name]), 1)
+        nt.links.new(g.outputs['Pointiness'], ramp.inputs[0])
+        nt.links.new(ramp.outputs[0], e.inputs['Color'])
     m.diffuse_color = (*srgb(PAL[name]), 1)
     return m
 
@@ -637,34 +653,51 @@ for i in range(29):
 collar = tube('collar', collar_pts, [2.0] * 29, ['ink'], ref=Vector((0, 0, 1)), n=8, caps=(None, None))
 part(collar, ['chest', 'neck'], 0)
 
-# Hoodie body: open at the front where the tee shows; the gap keeps its width all the way down.
+# The jacket (hoodie body with its hem band) is cloth. A hidden, lighter copy is simulated (Blender
+# cloth: weight, stretch, bending, air drag, collisions with the body), pinned firmly at the
+# shoulders and yoke and ever more loosely toward the hem and the open front, so it hangs off the
+# shoulders, lags behind the body, swings and folds. The visible jacket (with its thickness, dark
+# inside and outline) follows that simulated surface exactly, and so do its seams and the drawing's
+# lines on it. Open at the front where the tee shows; the gap keeps its width all the way down.
 GAP = 28.25
 HOOD_BODY = [(366, 66, 46, 4), (380, 76, 51, 2), (400, 80, 54, 0), (450, 81, 55, 0),
-             (520, 80, 55, 0), (577, 79, 55, 0)]
-rings = []
-for y, w, d, c in HOOD_BODY:
-    phi = asin(min(0.95, GAP / w))
-    rings.append(hring(y, w, d, c, n=33, a0=-pi / 2 + phi, a1=3 * pi / 2 - phi, closed=False))
-hoodie = loft('hoodie', rings, ['hoodie'], closed=False)
-smooth(hoodie)
-solidify(hoodie, 3.0, 'hoodin')
-part(hoodie, ['hips', 'spine', 'chest'])
+             (520, 80, 55, 0), (576, 79.5, 55.5, 0), (586, 79.2, 55.6, 0), (595, 78.8, 55.5, 0)]
 
-rings = []
-for y, w, d in ((576, 79, 56), (595, 78.5, 55.5)):
-    phi = asin(GAP / w)
-    rings.append(hring(y, w, d, 0, n=33, a0=-pi / 2 + phi, a1=3 * pi / 2 - phi, closed=False))
-hem = loft('hem', rings, ['hoodie'], closed=False)
-smooth(hem, 1)
-solidify(hem, 4.0, 'hoodin')
-part(hem, ['hips'])
-seam('hem_top', 576.5, 81, 58, ['hips'], gap=GAP + 1, w=3.2)
+
+def jacket_surface(name, levels):
+    rings = []
+    for y, w, d, c in HOOD_BODY:
+        phi = asin(min(0.95, GAP / w))
+        rings.append(hring(y, w, d, c, n=33, a0=-pi / 2 + phi, a1=3 * pi / 2 - phi, closed=False))
+    ob = loft(name, rings, ['hoodie'], closed=False)
+    smooth(ob, levels)
+    return ob
+
+
+jacket_sim = jacket_surface('jacket_sim', 1)
+jacket_sim.hide_render = True
+part(jacket_sim, ['hips', 'spine', 'chest'], 0)
+hoodie = jacket_surface('hoodie', 2)
+hoodie.data.materials.append(flat('hoodin'))
+part(hoodie, 'follow:jacket_sim', -1)   # thickness and outline come as modifiers after the cloth
+
+# what the cloth collides with: the body under it (a smooth stand-in for torso and hips, so the
+# tee's and trousers' outlines don't count as body)
+BODY_COL = [(366, 30, 26, 4), (380, 47, 35, 3), (396, 66, 45, 2), (420, 74, 48, 0), (520, 74, 48, 0),
+            (592, 74, 48, 0), (612, 74, 44, 0), (634, 66, 36, 0)]
+collider = loft('body_collider', [hring(y, w, d, c) for y, w, d, c in BODY_COL], ['tee'],
+                caps=(P(CX, 360, 4), P(CX, 640, 0)))
+smooth(collider, 1)
+collider.hide_render = True
+part(collider, ['hips', 'spine', 'chest'], 0)
+
+seam('hem_top', 576.5, 81, 58, 'follow:jacket_sim', gap=GAP + 1, w=3.2)
 # the front edges of the open hoodie (its rim is edge-on, so the outline cannot draw it)
 for side in (-1, 1):
     x = CX + side * GAP
     d = -55 * sqrt(1 - (GAP / 81) ** 2) + 0.5
     part(tube(f'front_edge.{"L" if side > 0 else "R"}', [(x + side * 5, 392, d + 8), (x + side, 404, d + 1), (x, 420, d), (x, 500, d), (x, 596, d)],
-              [2.6] * 5, ['ink'], ref=Vector((0, 1, 0)), n=8, caps=(0.6, 0.6)), ['hips', 'spine', 'chest'], 0)
+              [2.6] * 5, ['ink'], ref=Vector((0, 1, 0)), n=8, caps=(0.6, 0.6)), 'follow:jacket_sim', 0)
 
 # Hood: a thick rim around the neck, dark inside, with the lime piping on its outer edge.
 # measured on the drawing: the rim's centre line, its radius, and its depth
@@ -710,7 +743,7 @@ for side, x in ((-1, 344), (1, 428)):
              [2.6] * 4, ['string'], ref=Vector((0, 1, 0)), n=10, caps=(0.8, 0.8))
     smooth(s, 1)
     paint(s, lambda p, f: 'ink' if p[1] > 424 else None)
-    part(s, ['chest'], 1.6)
+    part(s, 'follow:jacket_sim', 1.6)  # drawstrings ride on the cloth
 
 # ================================================================ ARMS (sleeves, cuffs, hands)
 # Raglan sleeve from the hood down to the cuff, lime stripe down its outer side.
@@ -1216,6 +1249,9 @@ def skin(rig):
     (armpit_pull). Hands come pre-weighted."""
     segs = {n: (P(*h), P(*t)) for n, (_, h, t) in BONES.items()}
     for name, (ob, bones, line) in PARTS.items():
+        if isinstance(bones, str):  # 'follow:<object>': rides on another (simulated) surface
+            follow(ob, bpy.data.objects[bones.split(':', 1)[1]])
+            continue
         if bones is not None:
             side = next((s_ for s_ in ('L', 'R') if f'upper_arm.{s_}' in bones and 'chest' in bones), None)
             torso = set(bones) == {'hips', 'spine', 'chest'}
@@ -1248,6 +1284,56 @@ def skin(rig):
         mod.object = rig
         mod.use_deform_preserve_volume = True  # no "candy wrapper" when a joint twists
         ob.parent = rig
+
+
+def follow(ob, target):
+    """Make `ob` follow `target`'s deformed surface exactly (Surface Deform, bound at rest)."""
+    mod = ob.modifiers.new('follow', 'SURFACE_DEFORM')
+    mod.target = target
+    mod.falloff = 6.0
+    ob.modifiers.move(len(ob.modifiers) - 1, 0)   # first: thickness and outline come after it
+    with bpy.context.temp_override(object=ob, active_object=ob):
+        bpy.ops.object.surfacedeform_bind(modifier=mod.name)
+    if not mod.is_bound:
+        raise RuntimeError(f'could not bind {ob.name} to {target.name}')
+
+
+def setup_cloth():
+    """Cloth on the hidden jacket, collisions on the body stand-in, and the visible jacket's
+    thickness and outline (after it has followed the cloth)."""
+    sim = bpy.data.objects['jacket_sim']
+    pin = sim.vertex_groups.new(name='pin')
+    for v in sim.data.vertices:
+        x, y, d = v.co.x / S + CX, FLOOR - v.co.z / S, v.co.y / S
+        lower = smoothstep((y - 405) / (595 - 405))               # 0 at the yoke, 1 at the hem
+        front = smoothstep(-d / 55)                               # 1 on the front panels
+        armpit = max(smoothstep(1 - (Vector((x, y)) - Vector(ARM_J[s_]['shoulder'][:2])).length / 55)
+                     for s_ in ('L', 'R'))
+        w = 1 - lower * (0.86 + 0.1 * front)                      # hem: ~0.14 at the back, 0.04 at the front
+        pin.add([v.index], max(w, armpit), 'REPLACE')
+    cl = sim.modifiers.new('cloth', 'CLOTH')
+    st = cl.settings
+    st.quality = 10
+    st.mass = 0.25                    # cotton fleece
+    st.air_damping = 1.2
+    st.tension_stiffness = st.compression_stiffness = 18
+    st.shear_stiffness = 8
+    st.bending_stiffness = 1.2        # soft enough to fold, firm enough to keep the jacket's shape
+    st.tension_damping = st.compression_damping = st.shear_damping = 5
+    st.bending_damping = 0.5
+    st.vertex_group_mass = 'pin'
+    st.pin_stiffness = 1.0
+    cs = cl.collision_settings
+    cs.use_collision = True
+    cs.distance_min = 1.6 * S
+    cs.collision_quality = 4
+    cs.use_self_collision = False
+    cl.point_cache.frame_start = 1
+    cl.point_cache.frame_end = 400
+    col = bpy.data.objects['body_collider']
+    col.modifiers.new('collision', 'COLLISION')
+    col.collision.thickness_outer = 1.2 * S
+    col.collision.cloth_friction = 6
 
 
 # ================================================================ OUTLINES
@@ -1284,8 +1370,28 @@ def add_hull(ob, px):
 
 def finish_outlines():
     for name, (ob, bones, line) in PARTS.items():
-        if line:
+        if line > 0:
             add_hull(ob, line)
+        elif line < 0:
+            shell_modifiers(ob)
+
+
+def shell_modifiers(ob):
+    """For a simulated surface: thickness (the dark inside) and the outline (an inverted hull) as
+    modifiers, so they follow the cloth's every frame."""
+    so = ob.modifiers.new('thickness', 'SOLIDIFY')
+    so.thickness = 3.0 * S
+    so.offset = -1
+    so.use_rim = True
+    so.material_offset = 1           # inside: 'hoodin'
+    ob.data.materials.append(OUTLINE)
+    ol = ob.modifiers.new('outline', 'SOLIDIFY')
+    ol.thickness = LINE * S
+    ol.offset = 1
+    ol.use_flip_normals = True
+    ol.use_rim = False
+    ol.material_offset = 2           # 'outline'
+    ol.material_offset_rim = 2
 
 
 # ================================================================ RENDER
@@ -1334,7 +1440,7 @@ def traced_lines():
     os.remove(tmp)
     targets = {}
     for name, (ob, bones, line) in PARTS.items():
-        if line == 0 and name not in ('glasses',):
+        if (line == 0 and name not in ('glasses',)) or ob.hide_render:
             continue
         targets[name] = tree_of([ob])
     lab, n = ndi.label(miss)
@@ -1440,6 +1546,7 @@ if __name__ == '__main__':
     RIG = build_rig()
     find_poles(RIG)
     skin(RIG)
+    setup_cloth()
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'doodle.blend'))
     if '--glb' in sys.argv:
         export_glb(os.path.join(OUT, 'doodle.glb'))

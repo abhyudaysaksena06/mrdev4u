@@ -2,8 +2,9 @@
 #
 #   python3 anim_wave.py <doodle.blend> <out_dir> [--render] [--yaw=-25]
 #
-# Writes <out_dir>/doodle_wave.blend (the animation baked as keys on the rig, 30 fps) and, with
-# --render, the frames to <out_dir>/wave_<yaw>/ for ffmpeg.
+# Writes <out_dir>/doodle_wave.blend (the animation baked as keys on the rig, 30 fps, after 30 still
+# frames that let the jacket's cloth settle; the cloth simulation is baked next to it) and, with
+# --render, the frames of the wave itself to <out_dir>/wave_<yaw>/ for ffmpeg.
 #
 # The motion follows how a person waves:
 #   0.00-0.35  rest, breathing; a small dip of the knees (anticipation)
@@ -30,6 +31,7 @@ os.makedirs(OUT, exist_ok=True)
 
 FPS, DUR = 30, 3.7
 N = int(round(DUR * FPS))
+PRE = 30  # frames of stillness first, so the jacket's cloth settles before he moves
 
 bpy.ops.wm.open_mainfile(filepath=BLEND)
 SC = bpy.context.scene
@@ -195,8 +197,9 @@ for k in range(N + 1):
     # (vertical bones: local X = his left, Y = up, Z = toward the viewer)
     PB['hips'].location = (-0.016 * shift[k], -0.006 * shift[k] + 0.007 * dip[k] - 0.004, 0.0)
     setq('hips', eul(0, 0, -2.6 * shift[k]))
-    setq('spine', eul(0.6 * breathe, 0, 1.2 * shift[k]))
-    setq('chest', eul(0.8 * breathe - 1.2 * dip[k], 0, 2.6 * shift[k] + 0.8 * wave[k]))
+    # the torso turns a little toward the waving hand and rocks with the waves (the jacket swings)
+    setq('spine', eul(0.6 * breathe, 4.0 * shift[k], 1.2 * shift[k]))
+    setq('chest', eul(0.8 * breathe - 1.2 * dip[k], 4.0 * shift[k] + 1.2 * wave[k], 2.6 * shift[k] + 1.0 * wave[k]))
     setq('neck', eul(2.0 * nod[k], 0, -2.0 * shift[k]))
     setq('head', eul(5.5 * nod[k] - 1.0 * dip[k], 5.0 * shift[k], -6.5 * shift[k] - 0.8 * wave[k]))
     # waving arm
@@ -226,8 +229,8 @@ for k in range(N + 1):
     # key it
     for pb in PB:
         if pb.rotation_quaternion != Quaternion((1, 0, 0, 0)) or pb.location.length > 0 or pb.name in KEYED:
-            pb.keyframe_insert('rotation_quaternion', frame=k + 1)
-            pb.keyframe_insert('location', frame=k + 1)
+            pb.keyframe_insert('rotation_quaternion', frame=PRE + k + 1)
+            pb.keyframe_insert('location', frame=PRE + k + 1)
             KEYED.add(pb.name)
 
 if rig.animation_data and rig.animation_data.action:
@@ -236,8 +239,18 @@ if rig.animation_data and rig.animation_data.action:
         for kp in fc.keyframe_points:
             kp.interpolation = 'LINEAR'
 SC.render.fps = FPS
-SC.frame_start, SC.frame_end = 1, N + 1
+SC.frame_start, SC.frame_end = 1, PRE + N + 1
+# the jacket: simulate the cloth over the whole shot and keep it with the file
+sim = bpy.data.objects.get('jacket_sim')
+if sim:
+    cache = sim.modifiers['cloth'].point_cache
+    cache.frame_start, cache.frame_end = 1, PRE + N + 1
+    cache.use_disk_cache = True
 bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'doodle_wave.blend'))
+if sim:
+    bpy.ops.ptcache.free_bake_all()
+    bpy.ops.ptcache.bake_all(bake=True)
+    bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, 'doodle_wave.blend'))
 print('frames', N + 1, 'pronation', round(degrees(PRON)), 'dev sign', DEV_SIGN,
       'max drag', round(degrees(max(abs(d) for d in drag)), 1))
 
@@ -252,4 +265,5 @@ if '--render' in sys.argv:
     SC.cycles.samples = 16
     SC.render.image_settings.file_format = 'PNG'
     SC.render.filepath = os.path.join(OUT, f'wave_{int(YAW)}', '')
+    SC.frame_start = PRE + 1  # the stillness was only for the cloth
     bpy.ops.render.render(animation=True)
