@@ -119,6 +119,7 @@ def frame_from(y, z):
 
 SIDE = 'L'
 U_REST, F_REST, H_REST = rest_rot(f'upper_arm.{SIDE}'), rest_rot(f'forearm.{SIDE}'), rest_rot(f'hand.{SIDE}')
+S_REST = rest_rot(f'shoulder.{SIDE}')
 # raised: upper arm out to the side, a little forward and up; it bends toward his head
 U_UP = frame_from((0.80, -0.15, 0.50), (-0.5, 0.15, 0.85))
 Q_U = (U_REST.inverted() @ U_UP).to_quaternion()
@@ -200,8 +201,13 @@ for k in range(N + 1):
     setq('head', eul(5.5 * nod[k] - 1.0 * dip[k], 5.0 * shift[k], -6.5 * shift[k] - 0.8 * wave[k]))
     # waving arm
     q_u, e, _ = arm[k]
-    setq(f'shoulder.{SIDE}', eul(0, 0, 9 * max(0.0, r[k])))           # the clavicle lifts with the arm
-    setq(f'upper_arm.{SIDE}', q_u)
+    # the clavicle carries part of the lift (shoulder rhythm, about 1 : 3 of the arm's), so the bend
+    # is shared between the shoulder girdle and the joint, as on a person; the arm's own rotation
+    # gives that part back, keeping the hand where it was aimed
+    q_s = eul(0, 0, 18 * max(0.0, r[k]))
+    setq(f'shoulder.{SIDE}', q_s)
+    Rs = S_REST @ q_s.to_matrix() @ S_REST.inverted()
+    setq(f'upper_arm.{SIDE}', (U_REST.inverted() @ Rs.inverted() @ U_REST @ q_u.to_matrix()).to_quaternion())
     setq(f'forearm.{SIDE}', eul(degrees(e)))
     lift = max(0.0, min(1.0, r[k]))
     setq(f'hand.{SIDE}', Euler((radians(-6) * lift, PRON * lift, drag[k] * lift)).to_quaternion())

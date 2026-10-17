@@ -1151,31 +1151,98 @@ def find_poles(rig):
     bpy.context.view_layer.update()
 
 
+def smoothstep(x):
+    x = max(0.0, min(1.0, x))
+    return x * x * (3 - 2 * x)
+
+
+def dist_weights(co, bones, segs):
+    d = {b: max(seg_dist(co, *segs[b]), 1e-5) for b in bones}
+    w = {b: (1 / x) ** 8 for b, x in d.items()}
+    tot = sum(w.values())
+    return {b: x / tot for b, x in w.items()}
+
+
+def arm_weights(co, side, segs):
+    """A sleeve bends like a real arm: across the shoulder joint and the elbow the weight changes
+    smoothly along the arm's own axis (so a raised arm keeps a round deltoid cap on top and a soft
+    fold in the armpit, instead of a webbed wing from the neck), and the forearm's weight shades into
+    its twist bone toward the wrist."""
+    J = ARM_J[side]
+    sh, el, wr = P(*J['shoulder']), P(*J['elbow']), P(*J['wrist'])
+    ua = (el - sh).normalized()
+    # 0 above the joint (the raglan yoke stays with the body), 1 past it (all arm). The change is
+    # spread wider on the inner side (the armpit stretches into a curve, like skin and cloth) and
+    # on top (the deltoid rounds over instead of creasing).
+    c = co - sh
+    along = c.dot(ua) / S
+    perp = c - ua * c.dot(ua)
+    lat = ua.cross(Vector((0, 1, 0))).normalized()
+    if lat.x * (1 if side == 'L' else -1) < 0:
+        lat = -lat
+    m = perp.normalized().dot(-lat) if perp.length > 1e-6 else 0.0   # +1 armpit side, -1 top
+    lo = -18 + 6 * max(0.0, m) - 30 * max(0.0, -m)
+    hi = 24 + 50 * max(0.0, m) + 22 * max(0.0, -m)
+    w_arm = smoothstep((along - lo) / (hi - lo))
+    w_fore = smoothstep(((co - el).dot(ua) / S + 14) / 28)
+    t = smoothstep((co - el).dot((wr - el).normalized()) / (wr - el).length)
+    body = dist_weights(co, ['chest', f'shoulder.{side}'], segs)
+    w = {b: x * (1 - w_arm) for b, x in body.items()}
+    w[f'upper_arm.{side}'] = w_arm * (1 - w_fore)
+    w[f'forearm.{side}'] = w_arm * w_fore * (1 - t)
+    w[f'forearm_twist.{side}'] = w_arm * w_fore * t
+    return w
+
+
+def armpit_pull(co, w, segs):
+    """The hoodie's sides near the armpits follow the arms a little, so a raised arm lifts the
+    fabric into a curved fold rather than meeting the body at a hard corner."""
+    for side in ('L', 'R'):
+        sh = P(*ARM_J[side]['shoulder'])
+        x_px = co.x / S + CX
+        if abs(x_px - CX) < 58:
+            continue
+        d = (co - sh).length / S
+        k = 0.5 * smoothstep(1 - d / 72) * smoothstep((abs(x_px - CX) - 56) / 14)
+        if k > 0.005:
+            w = {b: x * (1 - k) for b, x in w.items()}
+            w[f'upper_arm.{side}'] = w.get(f'upper_arm.{side}', 0.0) + k
+    return w
+
+
 def skin(rig):
-    """Weights by distance to the bones each part may bend with (smooth blends at the joints); the
-    forearm's weight shades into its twist bone toward the wrist. Hands come pre-weighted."""
+    """Weights by distance to the bones each part may bend with (smooth blends at the joints).
+    Sleeves bend along the arm (arm_weights), the body's sides give a little under the arms
+    (armpit_pull). Hands come pre-weighted."""
     segs = {n: (P(*h), P(*t)) for n, (_, h, t) in BONES.items()}
     for name, (ob, bones, line) in PARTS.items():
         if bones is not None:
-            groups = {b: ob.vertex_groups.new(name=b) for b in bones}
-            for v in ob.data.vertices:
+            side = next((s_ for s_ in ('L', 'R') if f'upper_arm.{s_}' in bones and 'chest' in bones), None)
+            torso = set(bones) == {'hips', 'spine', 'chest'}
+            groups = {}
+            src = ob.data.attributes.get('src')
+            vs = ob.data.vertices
+            for v in vs:
+                co = vs[src.data[v.index].value].co if src else v.co
                 if len(bones) == 1:
-                    groups[bones[0]].add([v.index], 1.0, 'REPLACE')
-                    continue
-                d = {b: max(seg_dist(v.co, *segs[b]), 1e-5) for b in bones if not b.startswith('forearm_twist')}
-                w = {b: (1 / x) ** 8 for b, x in d.items()}
-                tot = sum(w.values())
-                w = {b: x / tot for b, x in w.items()}
-                for side in ('L', 'R'):
-                    fa, tw = f'forearm.{side}', f'forearm_twist.{side}'
-                    if fa in w and tw in bones:
-                        a, b = segs[fa]
-                        t = max(0.0, min(1.0, (v.co - a).dot(b - a) / (b - a).length_squared))
-                        k = t * t * (3 - 2 * t)
-                        w[tw] = w[fa] * k
-                        w[fa] *= 1 - k
+                    w = {bones[0]: 1.0}
+                elif side:
+                    w = arm_weights(co, side, segs)
+                else:
+                    w = dist_weights(co, [b for b in bones if not b.startswith('forearm_twist')], segs)
+                    for s_ in ('L', 'R'):
+                        fa, tw = f'forearm.{s_}', f'forearm_twist.{s_}'
+                        if fa in w and tw in bones:
+                            a, b = segs[fa]
+                            k = smoothstep((co - a).dot(b - a) / (b - a).length_squared)
+                            w[tw] = w[fa] * k
+                            w[fa] *= 1 - k
+                if torso:
+                    w = armpit_pull(co, w, segs)
                 for b, x in w.items():
-                    if x > 0.01:
+                    if x > 0.005:
+                        if b not in groups:
+                            groups[b] = ob.vertex_groups.new(name=b)
                         groups[b].add([v.index], x, 'REPLACE')
         mod = ob.modifiers.new('rig', 'ARMATURE')
         mod.object = rig
@@ -1193,9 +1260,15 @@ def add_hull(ob, px):
     k = len(me.materials) - 1
     bm = bmesh.new()
     bm.from_mesh(me)
+    # each hull vertex remembers the surface vertex it offsets, so skinning can give it exactly the
+    # same weights (otherwise the hull bends differently and pokes through at the joints). The layer
+    # is added first: adding it afterwards would invalidate the vertex references below.
+    src = bm.verts.layers.int.new('src')
     bm.normal_update()
     nrm = {v: v.normal.copy() for v in bm.verts}
     old = list(bm.verts)
+    for i, v in enumerate(old):
+        v[src] = i
     ret = bmesh.ops.duplicate(bm, geom=list(bm.verts) + list(bm.edges) + list(bm.faces))
     vmap = ret['vert_map']
     for v in old:
@@ -1283,7 +1356,17 @@ def traced_lines():
             continue
         per.setdefault(hit, np.zeros_like(miss))
         per[hit] |= lab == i + 1
+    # Around the shoulder joints the drawing's lines mark where sleeve, hood and body meet in that
+    # one pose; once the arm moves they would be left floating on the wrong part, so the model's
+    # own outlines draw those edges instead.
+    yy, xx = np.mgrid[0:miss.shape[0], 0:miss.shape[1]]
+    joints = np.zeros(miss.shape, bool)
+    for J in ARM_J.values():
+        joints |= (xx - J['shoulder'][0]) ** 2 + (yy - J['shoulder'][1]) ** 2 < 46 ** 2
+    moving = lambda nm_: nm_.startswith(('sleeve', 'hoodie', 'tee', 'cuff'))
     for name, m in per.items():
+        if moving(name):
+            m = m & ~joints
         raster_decal(f'lines.{name}', m, targets[name], 'ink', 0.8, PARTS[name][1])
 
     # the drawing's flat colour patches: shading under the chin, in the ears and below the collar,
@@ -1306,6 +1389,8 @@ def traced_lines():
             if nm_ in allowed:
                 masks.setdefault(nm_, np.zeros(CLS.shape, bool))[y, x] = True
         for nm_, m in masks.items():
+            if moving(nm_):
+                m = m & ~joints
             m = ndi.binary_opening(ndi.binary_closing(m, tr.disk(1)), tr.disk(1))
             raster_decal(f'{cls_}.{nm_}', m, targets[nm_], cls_, 0.4, PARTS[nm_][1])
 
