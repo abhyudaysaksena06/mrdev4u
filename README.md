@@ -41,9 +41,12 @@ preloader and 3D model all read from it. Regenerate `app/icon.svg` if you change
 - **One curve:** `--ease-out: cubic-bezier(0.12, 0.23, 0.5, 1)`, measured from grigoletti.ch.
 - **3D logo toy:** `components/logo/` (404 page). Loads only on interaction, on devices
   with WebGL2 and no data-saver setting. Everyone else gets the SVG mark.
-- **Doodle:** traced from the reference drawing by `scripts/doodle-trace/` into `public/doodle.svg`
-  and shown still in the hero (`HeroDoodle.tsx`). His animation will come from the rigged 3D model
-  built in Blender by `scripts/doodle-3d/build_model.py` (`doodle.blend` and previews alongside).
+- **Doodle:** a 3D model of the reference drawing, built, rigged and animated in Blender by
+  `scripts/doodle-3d/` (`build_model.py` model and rig, `anim_wave.py` the wave, `check.py` the
+  review harness). The hero (`HeroDoodle.tsx`) shows a still render (`public/doodle3d/rest.webp`)
+  and plays the rendered wave over it after the preloader and on every click: an H.264/VP9 video
+  with the colour in the top half and the alpha matte in the bottom half, recombined on a WebGL
+  canvas (small, and transparent in every browser).
 - **Smooth scroll:** Lenis on fine-pointer devices only.
 - **Page transitions:** View Transitions API via `next-view-transitions`; project covers morph
   into the case-study hero.

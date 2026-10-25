@@ -102,6 +102,10 @@ def fk_arm(rig, side, u, hint, elbow, pron=0.0, flex=0.0, dev=0.0, clav=0.0):
         pb[n].rotation_mode = 'QUATERNION'
     S_REST = bn[f'shoulder.{side}'].matrix_local.to_3x3()
     U_REST = bn[f'upper_arm.{side}'].matrix_local.to_3x3()
+    # the rig's .R bones are the mirror of the .L ones (Blender convention): X bends the same way on
+    # both sides, but Y and Z turns are mirrored, so a lift, pronation or deviation flips sign on .R
+    m = 1 if side == 'L' else -1
+    clav, pron, dev = clav * m, pron * m, dev * m
     q_s = eul(0, 0, clav)
     Rs = S_REST @ q_s.to_matrix() @ S_REST.inverted()
     pb[f'shoulder.{side}'].rotation_quaternion = q_s

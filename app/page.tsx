@@ -13,7 +13,7 @@ import { preload } from 'react-dom'
 
 export default function Home() {
   // The hero doodle is needed once the preloader ends.
-  preload('/doodle.svg', { as: 'image' })
+  preload('/doodle3d/rest.webp', { as: 'image', fetchPriority: 'high' })
   return (
     <>
       <Preloader />

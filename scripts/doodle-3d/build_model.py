@@ -7,9 +7,10 @@
 # <out_dir>/doodle.glb (skinned, for three.js) with --glb. The committed doodle.blend next to this
 # script is its output; preview/ has the turnaround and a rig test.
 #
-# Rig (60 bones, at the anatomical joint centres): root > hips > spine > chest > neck > head;
+# Rig (62 bones, at the anatomical joint centres): root > hips > spine > chest > neck > head;
 # per side shoulder > upper_arm > forearm (+ forearm_twist) > hand > three bones per finger and
-# thumb; thigh > shin > foot. Joints have human ranges (elbows and knees hinge one way only, finger
+# thumb, and a deltoid helper on the shoulder that turns half as far as the upper arm; thigh > shin
+# > foot. Joints have human ranges (elbows and knees hinge one way only, finger
 # joints curl, the wrist's turn is shared with the forearm so it never wrings). Legs are IK
 # (foot_ik, knee_pole; planted feet stay flat); arms are FK with an IK (hand_ik, elbow_pole) to
 # switch on for pushes and grabs. posing.py has helpers to pose and render it.
@@ -690,6 +691,13 @@ collider = loft('body_collider', [hring(y, w, d, c) for y, w, d, c in BODY_COL],
 smooth(collider, 1)
 collider.hide_render = True
 part(collider, ['hips', 'spine', 'chest'], 0)
+# ...and the thighs, so a raised knee or a sit lifts the jacket's hem instead of passing through it
+for side in (-1, 1):
+    nm = 'L' if side > 0 else 'R'
+    lc = tube(f'leg_collider.{nm}', [(CX + side * 44, 606, 0), (CX + side * 45.5, 660, -1.5), (CX + side * 47, 724, -3)],
+              [36, 33, 29], ['tee'], ref=Vector((1, 0, 0)), n=16, caps=(0.4, 0.4))
+    lc.hide_render = True
+    part(lc, [f'thigh.{nm}'], 0)
 
 seam('hem_top', 576.5, 81, 58, 'follow:jacket_sim', gap=GAP + 1, w=3.2)
 # the front edges of the open hoodie (its rim is edge-on, so the outline cannot draw it)
@@ -1013,7 +1021,7 @@ def shoe(side):
     ob.location = P(CX + side * 76, 845, -14)
     apply_transform(ob)
     smooth(ob, 1)
-    part(ob, [f'foot.{nm}'])
+    part(ob, [f'foot.{nm}', f'toe.{nm}'])   # the sole bends at the ball (toe-off)
 
 
 shoe(-1)
@@ -1048,29 +1056,60 @@ for side, sx in (('L', 1), ('R', -1)):
         f'thigh.{side}': ('hips', (X(44), 614, 0), (X(47), 726, -3)),
         f'shin.{side}': (f'thigh.{side}', (X(47), 726, -3), (X(53), 832, 3)),
         f'foot.{side}': (f'shin.{side}', (X(53), 832, 3), (X(53 + 30), 856, 3 - 30)),
+        # the toes, from the ball of the foot to the tip of the shoe (along the 45 degree turn-out)
+        f'toe.{side}': (f'foot.{side}', (X(83), 856, -27), (X(109), 856, -47)),
     })
 for n, (parent, h, t, z) in HAND_BONES.items():
     BONES[n] = (parent, h, t)
+# Deltoid helper: at the shoulder joint, on the clavicle, turned half as far as the upper arm by a
+# constraint (build_rig). The shoulder cap is weighted across body > deltoid > arm, so no blend spans
+# more than half the arm's swing and the cap rounds over instead of folding in.
+for side in ('L', 'R'):
+    J = ARM_J[side]
+    BONES[f'deltoid.{side}'] = (f'shoulder.{side}', J['shoulder'],
+                                tuple(Vector(J['shoulder']).lerp(Vector(J['elbow']), 0.45)))
 # animation controls (not deforming)
+KNEE_OUT = 20   # degrees the knees face outward (the drawing's feet turn out 45; knees track toward the toes)
 CONTROLS = {}
 for side, sx in (('L', 1), ('R', -1)):
     X = lambda o: CX + sx * o
     J = ARM_J[side]
     CONTROLS.update({
+        # reverse foot: the animator moves foot_ctrl; heel_roll tips the foot back on its heel (heel
+        # strike), toe_roll stands it on the tip, ball_roll lifts the heel over the ball (toes stay
+        # flat: the toe bone copies toe_roll). The leg IK target hangs under ball_roll.
+        f'foot_ctrl.{side}': ('root', (X(43), 862, 19), (X(109), 862, -47)),
+        f'heel_roll.{side}': (f'foot_ctrl.{side}', (X(43), 862, 19), (X(69), 862, -1)),
+        f'toe_roll.{side}': (f'heel_roll.{side}', (X(109), 862, -47), (X(135), 862, -67)),
+        f'ball_roll.{side}': (f'toe_roll.{side}', (X(83), 862, -27), (X(109), 862, -47)),
         # same rest as the foot, so the foot can copy it exactly (stays flat on the floor)
-        f'foot_ik.{side}': ('root', (X(53), 832, 3), (X(53 + 30), 856, 3 - 30)),
-        f'knee_pole.{side}': ('root', (X(47), 726, -160), (X(47), 726, -200)),
+        f'foot_ik.{side}': (f'ball_roll.{side}', (X(53), 832, 3), (X(53 + 30), 856, 3 - 30)),
+        # the knee aims where the foot goes: the pole rides on the foot control (a pole fixed in the
+        # world at knee height flips the knee backwards as soon as the foot rises above it)
+        f'knee_pole.{side}': (f'foot_ctrl.{side}', (X(47 + 160 * sin(radians(KNEE_OUT))), 726, -3 - 160 * cos(radians(KNEE_OUT))),
+                              (X(47 + 200 * sin(radians(KNEE_OUT))), 726, -3 - 200 * cos(radians(KNEE_OUT)))),
         f'hand_ik.{side}': ('root', J['wrist'], HAND_BONES[f'hand.{side}'][2]),
         f'elbow_pole.{side}': ('root', (J['elbow'][0], J['elbow'][1], 140), (J['elbow'][0], J['elbow'][1], 180)),
     })
 
-# Joint ranges (degrees, local X/Y/Z): how far a person's joints actually go.
+# Joint ranges (degrees, local X/Y/Z): how far a person's joints actually go. Written for the .L
+# side; .R bones are the mirror image (Blender's convention: X bends the same way on both sides,
+# Y and Z turns are mirrored), so their Y and Z ranges are mirrored in build_rig.
 LIMITS = {
+    # (the shoulder ball joint is left free: an Euler limit there clamps valid poses, the arm's
+    # 90-degree turn in the wave flips its X/Y/Z decomposition; the hips' range is an IK limit)
+    'shoulder': ((-15, 15), (-10, 10), (-8, 35)),        # clavicle: pro/retraction, roll, + Z lifts (shrug)
+    'spine': ((-25, 45), (-30, 30), (-25, 25)),
+    'chest': ((-20, 35), (-35, 35), (-20, 20)),
+    'hips': (None, None, None),
     'forearm': ((0, 150), (0, 0), (-4, 4)),          # elbow: a hinge, no hyperextension
     'forearm_twist': (None, None, None),
-    'hand': ((-70, 80), (-85, 85), (-25, 35)),       # wrist: flex/extend, pronate/supinate, tilt
+    # wrist: flex/extend; the hand's turn (+ pronates on .L; it hangs pronated 55 deg in the rest
+    # pose, so 30 more pronation, 140 of supination, palm fully up); + Z bends toward the thumb on .L
+    # (radial 20, ulnar 35)
+    'hand': ((-70, 80), (-140, 30), (-35, 20)),
     'shin': ((-150, 0), (0, 0), (-3, 3)),            # knee: a hinge that bends back
-    'foot': ((-45, 30), (-20, 20), (-25, 25)),
+    'foot': ((-50, 20), (-20, 20), (-25, 25)),     # X now across the foot: -50 plantar .. +20 dorsiflexion
     'neck': ((-40, 35), (-50, 50), (-30, 30)),
     'head': ((-35, 30), (-45, 45), (-25, 25)),
     'f_thumb.01': ((-25, 50), (-30, 30), (-35, 35)),
@@ -1103,6 +1142,11 @@ def build_rig():
             b.align_roll(HAND_BONES[b.name][3])  # Z to the palm: + X rotation curls
         elif b.name.startswith('hand_ik'):
             b.align_roll(HAND_BONES[b.name.replace('hand_ik', 'hand')][3])
+        elif b.name.startswith(('thigh', 'shin')):
+            sx = 1 if b.name.endswith('.L') else -1
+            b.align_roll(Vector((sx * sin(radians(KNEE_OUT)), -cos(radians(KNEE_OUT)), 0)))  # knee faces 20 deg out, toward the toes
+        elif b.name.startswith(('foot', 'toe', 'heel_roll', 'ball_roll')):
+            b.align_roll(Vector((0, 0, 1)))      # X across the foot: + X lifts the toes
         elif abs((b.tail - b.head).normalized().y) < 0.9:
             b.align_roll(Vector((0, -1, 0)))     # Z forward: + X bends elbows forward
     bpy.ops.object.mode_set(mode='POSE')
@@ -1118,10 +1162,18 @@ def build_rig():
             for ax, rng in zip('xyz', lim):
                 if rng is None:
                     continue
+                if b.name.endswith('.R') and ax in 'yz':
+                    rng = (-rng[1], -rng[0])
                 setattr(c, f'use_limit_{ax}', True)
                 setattr(c, f'min_{ax}', radians(rng[0]))
                 setattr(c, f'max_{ax}', radians(rng[1]))
     for side in ('L', 'R'):
+        # deltoid helper: half the upper arm's turn (same rest frame and parent, so local = local)
+        c = pb[f'deltoid.{side}'].constraints.new('COPY_ROTATION')
+        c.target, c.subtarget = rig, f'upper_arm.{side}'
+        c.target_space = c.owner_space = 'LOCAL'
+        c.mix_mode = 'REPLACE'
+        c.influence = 0.5
         # forearm twist follows the hand's turn about the forearm
         c = pb[f'forearm_twist.{side}'].constraints.new('COPY_ROTATION')
         c.target, c.subtarget = rig, f'hand.{side}'
@@ -1135,6 +1187,14 @@ def build_rig():
         ik.chain_count = 2
         c = pb[f'foot.{side}'].constraints.new('COPY_ROTATION')  # planted feet stay flat
         c.target, c.subtarget = rig, f'foot_ik.{side}'
+        c = pb[f'toe.{side}'].constraints.new('COPY_ROTATION')   # toes stay on the floor as the heel lifts
+        c.target, c.subtarget = rig, f'toe_roll.{side}'
+        th = pb[f'thigh.{side}']                                  # the hip, as the IK solver sees it
+        th.use_ik_limit_x = th.use_ik_limit_y = th.use_ik_limit_z = True
+        th.ik_min_x, th.ik_max_x = radians(-25), radians(125)     # extension .. flexion
+        th.ik_min_y, th.ik_max_y = radians(-40), radians(40)      # turn
+        mz = 1 if side == 'L' else -1                              # mirrored: + Z abducts on .L
+        th.ik_min_z, th.ik_max_z = sorted((radians(-25) * mz, radians(45) * mz))
         sh = pb[f'shin.{side}']
         sh.lock_ik_y = sh.lock_ik_z = True
         sh.use_ik_limit_x = True
@@ -1198,15 +1258,16 @@ def dist_weights(co, bones, segs):
 
 def arm_weights(co, side, segs):
     """A sleeve bends like a real arm: across the shoulder joint and the elbow the weight changes
-    smoothly along the arm's own axis (so a raised arm keeps a round deltoid cap on top and a soft
-    fold in the armpit, instead of a webbed wing from the neck), and the forearm's weight shades into
-    its twist bone toward the wrist."""
+    along the arm's own axis, and the forearm's weight shades into its twist bone toward the wrist.
+    At the shoulder the change goes body > deltoid helper > upper arm, and how wide it is depends on
+    the side of the arm: short and just below the joint in the armpit (the arm's underside goes with
+    the arm right up to the hollow, so it never fans into a web or a ball), wider in front and behind
+    (the chest and back folds run into the arm) and widest over the top (the deltoid rounds over).
+    The yoke (the raglan part toward the neck) rides on the clavicle more the farther out it is."""
     J = ARM_J[side]
     sh, el, wr = P(*J['shoulder']), P(*J['elbow']), P(*J['wrist'])
     ua = (el - sh).normalized()
-    # 0 above the joint (the raglan yoke stays with the body), 1 past it (all arm). The change is
-    # spread wider on the inner side (the armpit stretches into a curve, like skin and cloth) and
-    # on top (the deltoid rounds over instead of creasing).
+    # 0 above the joint (the raglan yoke stays with the body), 1 past it (all arm)
     c = co - sh
     along = c.dot(ua) / S
     perp = c - ua * c.dot(ua)
@@ -1214,39 +1275,65 @@ def arm_weights(co, side, segs):
     if lat.x * (1 if side == 'L' else -1) < 0:
         lat = -lat
     m = perp.normalized().dot(-lat) if perp.length > 1e-6 else 0.0   # +1 armpit side, -1 top
-    lo = -18 + 6 * max(0.0, m) - 30 * max(0.0, -m)
-    hi = 24 + 50 * max(0.0, m) + 22 * max(0.0, -m)
+    mi = max(0.0, m) ** 3          # only the true inner side counts as armpit, not the front/back
+    lo = -20 + 16 * mi - 20 * max(0.0, -m)     # px along the arm: armpit -4..18, front/back
+    hi = 26 - 8 * mi - 4 * max(0.0, -m)        # -20..26, top -40..22
     w_arm = smoothstep((along - lo) / (hi - lo))
     w_fore = smoothstep(((co - el).dot(ua) / S + 14) / 28)
     t = smoothstep((co - el).dot((wr - el).normalized()) / (wr - el).length)
-    body = dist_weights(co, ['chest', f'shoulder.{side}'], segs)
-    w = {b: x * (1 - w_arm) for b, x in body.items()}
-    w[f'upper_arm.{side}'] = w_arm * (1 - w_fore)
-    w[f'forearm.{side}'] = w_arm * w_fore * (1 - t)
-    w[f'forearm_twist.{side}'] = w_arm * w_fore * t
+    # body share: the clavicle carries the yoke more the farther out it is (none by the hood, all
+    # at the joint), so a shrug lifts the shoulder, not the hood's edge
+    cl = P(*J['clav'])
+    k = smoothstep(((co - cl).dot(sh - cl) / (sh - cl).length_squared - 0.25) / 0.6)
+    body = {'chest': 1 - k, f'shoulder.{side}': k}
+    # body > deltoid > arm: each blend spans at most half the arm's swing
+    a = max(0.0, 2 * w_arm - 1)
+    w = {b: x * max(0.0, 1 - 2 * w_arm) for b, x in body.items()}
+    w[f'deltoid.{side}'] = 1 - abs(2 * w_arm - 1)
+    w[f'upper_arm.{side}'] = a * (1 - w_fore)
+    w[f'forearm.{side}'] = a * w_fore * (1 - t)
+    w[f'forearm_twist.{side}'] = a * w_fore * t
     return w
 
 
-def armpit_pull(co, w, segs):
-    """The hoodie's sides near the armpits follow the arms a little, so a raised arm lifts the
-    fabric into a curved fold rather than meeting the body at a hard corner."""
+def shoulder_lbs(co, side):
+    """How much of a sleeve vertex bends by plain linear blending rather than dual quaternions: 1
+    around the shoulder joint, 0 from 80 px out. Dual quaternions keep every vertex at its distance
+    from the joint, so the half-turned shoulder cap balloons into a ball with a step where it meets
+    the yoke; a linear blend draws it in along the chord into the soft valley a raised shoulder has.
+    Elbow and forearm stay dual quaternion (no candy wrapper when the forearm twists)."""
+    d = (co - P(*ARM_J[side]['shoulder'])).length / S
+    return smoothstep((80 - d) / 40)
+
+
+def shoulder_pull(co, w, segs, k_max=0.85):
+    """The jacket's yoke, the hood and the tee over the shoulders ride on the clavicles (a shrug or
+    a raised arm lifts the shoulder line, hood and all), fading out toward the neck and below the
+    armpit."""
     for side in ('L', 'R'):
-        sh = P(*ARM_J[side]['shoulder'])
-        x_px = co.x / S + CX
-        if abs(x_px - CX) < 58:
+        a, b = segs[f'shoulder.{side}']
+        lat = abs(co.x / S)
+        if (co.x > 0) != (side == 'L'):
             continue
-        d = (co - sh).length / S
-        k = 0.5 * smoothstep(1 - d / 72) * smoothstep((abs(x_px - CX) - 56) / 14)
+        d = seg_dist(co, a, b) / S
+        y = FLOOR - co.z / S
+        y_line = 372 + (lat - 14) * 18 / 72          # the clavicle's line, drawing px
+        # over the shoulder only: the body below the armpit stays with the chest
+        k = k_max * smoothstep((lat - 20) / 46) * smoothstep(1 - (d - 20) / 45) * smoothstep((y_line + 12 - y) / 24)
         if k > 0.005:
-            w = {b: x * (1 - k) for b, x in w.items()}
-            w[f'upper_arm.{side}'] = w.get(f'upper_arm.{side}', 0.0) + k
+            w = {bn: x * (1 - k) for bn, x in w.items()}
+            w[f'shoulder.{side}'] = w.get(f'shoulder.{side}', 0.0) + k
     return w
+
+
+HOOD_NECK = 0.4   # how much of the neck's turn the hood takes (it sits on the jacket, the neck turns inside it)
 
 
 def skin(rig):
     """Weights by distance to the bones each part may bend with (smooth blends at the joints).
-    Sleeves bend along the arm (arm_weights), the body's sides give a little under the arms
-    (armpit_pull). Hands come pre-weighted."""
+    Sleeves bend along the arm (arm_weights; linear blend around the shoulder, shoulder_lbs). The
+    body under the arms stays with the body: its side line runs straight down from the armpit
+    however the arm moves. Hands come pre-weighted."""
     segs = {n: (P(*h), P(*t)) for n, (_, h, t) in BONES.items()}
     for name, (ob, bones, line) in PARTS.items():
         if isinstance(bones, str):  # 'follow:<object>': rides on another (simulated) surface
@@ -1254,14 +1341,25 @@ def skin(rig):
             continue
         if bones is not None:
             side = next((s_ for s_ in ('L', 'R') if f'upper_arm.{s_}' in bones and 'chest' in bones), None)
-            torso = set(bones) == {'hips', 'spine', 'chest'}
+            yoke = 'chest' in bones and 'head' not in bones and not side and set(bones) <= {'hips', 'spine', 'chest', 'neck'}
+            hoodish = set(bones) == {'chest', 'neck'}
             groups = {}
+            if side:
+                groups['lbs'] = ob.vertex_groups.new(name='lbs')
             src = ob.data.attributes.get('src')
             vs = ob.data.vertices
             for v in vs:
                 co = vs[src.data[v.index].value].co if src else v.co
                 if len(bones) == 1:
                     w = {bones[0]: 1.0}
+                elif bones[0].startswith('foot.') and len(bones) == 2:
+                    a, b = segs[bones[1]]
+                    t = (co - a).dot((b - a).normalized()) / S
+                    k = smoothstep((t + 8) / 16)
+                    w = {bones[0]: 1 - k, bones[1]: k}
+                elif hoodish:
+                    w = dist_weights(co, bones, segs)
+                    w = {'chest': w['chest'] + (1 - HOOD_NECK) * w['neck'], 'neck': HOOD_NECK * w['neck']}
                 elif side:
                     w = arm_weights(co, side, segs)
                 else:
@@ -1273,16 +1371,25 @@ def skin(rig):
                             k = smoothstep((co - a).dot(b - a) / (b - a).length_squared)
                             w[tw] = w[fa] * k
                             w[fa] *= 1 - k
-                if torso:
-                    w = armpit_pull(co, w, segs)
+                if yoke:
+                    w = shoulder_pull(co, w, segs)
                 for b, x in w.items():
                     if x > 0.005:
                         if b not in groups:
                             groups[b] = ob.vertex_groups.new(name=b)
                         groups[b].add([v.index], x, 'REPLACE')
+                if side:
+                    groups['lbs'].add([v.index], shoulder_lbs(co, side), 'REPLACE')
         mod = ob.modifiers.new('rig', 'ARMATURE')
         mod.object = rig
         mod.use_deform_preserve_volume = True  # no "candy wrapper" when a joint twists
+        if 'lbs' in ob.vertex_groups:
+            # the same skin by linear blending, mixed in by the 'lbs' group (shoulder_lbs)
+            lin = ob.modifiers.new('rig_shoulder', 'ARMATURE')
+            lin.object = rig
+            lin.use_deform_preserve_volume = False
+            lin.use_multi_modifier = True
+            lin.vertex_group = 'lbs'
         ob.parent = rig
 
 
@@ -1330,10 +1437,11 @@ def setup_cloth():
     cs.use_self_collision = False
     cl.point_cache.frame_start = 1
     cl.point_cache.frame_end = 400
-    col = bpy.data.objects['body_collider']
-    col.modifiers.new('collision', 'COLLISION')
-    col.collision.thickness_outer = 1.2 * S
-    col.collision.cloth_friction = 6
+    for name in ('body_collider', 'leg_collider.L', 'leg_collider.R'):
+        col = bpy.data.objects[name]
+        col.modifiers.new('collision', 'COLLISION')
+        col.collision.thickness_outer = 1.2 * S
+        col.collision.cloth_friction = 6
 
 
 # ================================================================ OUTLINES
@@ -1473,6 +1581,14 @@ def traced_lines():
     for name, m in per.items():
         if moving(name):
             m = m & ~joints
+            # a line the joint mask cut leaves a stub just outside it (the end of the drawn
+            # sleeve/body contact line): on a raised arm it would ride along as a stray tick
+            lab_, n_ = ndi.label(m)
+            near = ndi.binary_dilation(joints, tr.disk(3))
+            for i_ in range(1, n_ + 1):
+                c_ = lab_ == i_
+                if c_.sum() < 80 and (c_ & near).any():
+                    m = m & ~c_
         raster_decal(f'lines.{name}', m, targets[name], 'ink', 0.8, PARTS[name][1])
 
     # the drawing's flat colour patches: shading under the chin, in the ears and below the collar,
